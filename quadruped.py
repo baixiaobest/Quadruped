@@ -44,13 +44,13 @@ class Quadruped:
 
     def set_joint_angles(self, joints):
         if not len(joints) == 12:
-            raise("Joints number should be 12")
+            raise(Exception("Joints number should be 12"))
         self.joints = joints
 
     def get_joint_angles(self):
         return self.joints
 
-    def get_foot_tip_jacobian(self):
+    def get_foot_tip_jacobians(self):
         '''
         Get jacobian matrices from joints of each branch to top of each foot.
         It is expressed in body frame.
@@ -80,7 +80,7 @@ class Quadruped:
         J_RL = self.get_jacobian(RL_transforms, self.rotation_axes[6:9])
         J_RR = self.get_jacobian(RR_transforms, self.rotation_axes[9:12])
 
-        return [J_FL, J_FR, J_RL, J_RR]
+        return J_FL, J_FR, J_RL, J_RR
 
     def get_jacobian(self, transformations, rotation_axes):
         T_bi = np.identity(4)
@@ -114,6 +114,8 @@ class Quadruped:
             J = np.concatenate((w, np.cross(w, P_ie)))
 
             J_list.append(J)
+
+        return np.column_stack(J_list)
 
     def get_KTtree(self):
         """
