@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 def translate(x, y, z):
     '''
@@ -39,3 +40,23 @@ def compute_global_pose(node):
     else:
         parent_tf = compute_global_pose(node['parent'])
         return parent_tf @ node['transform']
+
+def tranform_vector(T, p):
+    '''
+    Transform 3d vector with homogeneous transformation.
+    :param T: Homogeneous transform.
+    :param p: 3d vector to be transformed.
+    :return: Transformed 3d vector
+    '''
+    p_aug = np.concatenate((p, np.array([0])))
+    p_aug = T@p
+    return np.array([p_aug[0]/p_aug[3], p_aug[1]/p_aug[3], p_aug[2]/p_aug[3]])
+
+def rotation_to_zyx_euler(Rmat):
+    '''
+    Given rotation matrix, return yaw, pitch, roll angles.
+    :param R:
+    :return:
+    '''
+    r = R.from_matrix(Rmat)
+    return r.as_euler('ZYX')

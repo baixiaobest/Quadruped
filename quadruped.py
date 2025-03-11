@@ -42,6 +42,8 @@ class Quadruped:
             np.array([1, 0, 0])
         ]
 
+        self.body_transform = np.eye(4)
+
     def set_joint_angles(self, joints):
         if not len(joints) == 12:
             raise(Exception("Joints number should be 12"))
@@ -50,6 +52,18 @@ class Quadruped:
     def get_joint_angles(self):
         return self.joints
 
+    def get_transforms_list(self, node):
+        transforms = []
+        it = node
+        while True:
+            transforms.append(it['transform'])
+            # If there are no children, we've reached the foot node
+            if not it['children']:
+                break
+            # Otherwise, move to the (only) child
+            it = list(it['children'].values())[0]
+        return transforms
+
     def get_foot_tip_jacobians(self):
         '''
         Get jacobian matrices from joints of each branch to top of each foot.
@@ -57,61 +71,117 @@ class Quadruped:
         :return: List of 4 jacobian matrices.
         '''
 
-        def get_transforms_list(node):
-            transforms = []
-            it = node
-            while True:
-                transforms.append(it['transform'])
-                # If there are no children, we've reached the foot node
-                if not it['children']:
-                    break
-                # Otherwise, move to the (only) child
-                it = list(it['children'].values())[0]
-            return transforms
+        world = self.get_KTtree()
+        body_frame = world['children']['body']
+        FL_transforms = self.get_transforms_list(body_frame['children']['FL_shoulder_1'])
+        FR_transforms = self.get_transforms_list(body_frame['children']['FR_shoulder_1'])
+        RL_transforms = self.get_transforms_list(body_frame['children']['RL_shoulder_1'])
+        RR_transforms = self.get_transforms_list(body_frame['children']['RR_shoulder_1'])
 
-        body_frame = self.get_KTtree()
-        FL_transforms = get_transforms_list(body_frame['children']['FL_shoulder_1'])
-        FR_transforms = get_transforms_list(body_frame['children']['FR_shoulder_1'])
-        RL_transforms = get_transforms_list(body_frame['children']['RL_shoulder_1'])
-        RR_transforms = get_transforms_list(body_frame['children']['RR_shoulder_1'])
-
-        J_FL = self.get_jacobian(FL_transforms, self.rotation_axes[0:3])
-        J_FR = self.get_jacobian(FR_transforms, self.rotation_axes[3:6])
-        J_RL = self.get_jacobian(RL_transforms, self.rotation_axes[6:9])
-        J_RR = self.get_jacobian(RR_transforms, self.rotation_axes[9:12])
+        J_FL = self.get_foot_tip_jacobian(body_frame['transform'], FL_transforms, self.rotation_axes[0:3])
+        J_FR = self.get_foot_tip_jacobian(body_frame['transform'], FR_transforms, self.rotation_axes[3:6])
+        J_RL = self.get_foot_tip_jacobian(body_frame['transform'], RL_transforms, self.rotation_axes[6:9])
+        J_RR = self.get_foot_tip_jacobian(body_frame['transform'], RR_transforms, self.rotation_axes[9:12])
 
         return J_FL, J_FR, J_RL, J_RR
 
-    def get_jacobian(self, transformations, rotation_axes):
-        T_bi = np.identity(4)
+    def get_foot_tip_jacobian(self, body_transform, transformations, rotation_axes):
+        T_i = body_transform
         J_list = []
 
-        # This multiplies all transforms in 'transformations' to get the base->EE transform.
-        # So T_ee is the transform that takes a point in end-effector coords to base coords.
-        T_ee = reduce(lambda A, B: A @ B, transformations, np.eye(4))
+        # So T_ee is the transform that takes a point in end-effector frame to world frame.
+        T_ee = body_transform @ reduce(lambda A, B: A @ B, transformations, np.eye(4))
 
         # The end-effector's position in base frame:
         P_ee = T_ee[0:3, 3]
 
         for i in range(len(rotation_axes)):
             # Multiply up to the i-th joint to get base->joint_i transform
-            T_bi = T_bi @ transformations[i]
+            T_i = T_i @ transformations[i]
 
-            # Joint i's origin in the base frame:
-            P_bi = T_bi[0:3, 3]
+            # Joint i's origin in the world frame:
+            P_i = T_i[0:3, 3]
 
             # Vector from joint i's origin to end-effector
-            P_ie = P_ee - P_bi
+            P_ie = P_ee - P_i
 
-            # 'rotation_axes[i]' is presumably the joint axis in joint i's local frame.
-            # Multiply it by T_bi's rotation part to express it in the base frame:
-            w = T_bi[0:3, 0:3] @ rotation_axes[i]
+            # 'rotation_axes[i]' is the joint axis in joint i's joint frame.
+            # Multiply it by T_wi's rotation part to express it in the world frame:
+            w = T_i[0:3, 0:3] @ rotation_axes[i]
 
-            # For a revolute joint:
-            # linear velocity contribution =  w x (P_ee - P_bi)
-            # angular velocity contribution = w
-            # (But see note below about ordering.)
             J = np.concatenate((w, np.cross(w, P_ie)))
+
+            J_list.append(J)
+
+        return np.column_stack(J_list)
+
+    def get_body_jacobians(self):
+        world = self.get_KTtree()
+        body_frame = world['children']['body']
+        FL_transforms = self.get_transforms_list(body_frame['children']['FL_shoulder_1'])
+        FR_transforms = self.get_transforms_list(body_frame['children']['FR_shoulder_1'])
+        RL_transforms = self.get_transforms_list(body_frame['children']['RL_shoulder_1'])
+        RR_transforms = self.get_transforms_list(body_frame['children']['RR_shoulder_1'])
+
+        FL_foot_tip = body_frame @ reduce(lambda A, B: A @ B, FL_transforms, np.eye(4))
+        FR_foot_tip = body_frame @ reduce(lambda A, B: A @ B, FR_transforms, np.eye(4))
+        RL_foot_tip = body_frame @ reduce(lambda A, B: A @ B, RL_transforms, np.eye(4))
+        RR_foot_tip = body_frame @ reduce(lambda A, B: A @ B, RR_transforms, np.eye(4))
+
+        FL_foot_yaw, FL_foot_pitch, FL_foot_roll = rotation_to_zyx_euler(FL_foot_tip[0:3, 0:3])
+        FR_foot_yaw, FR_foot_pitch, FR_foot_roll = rotation_to_zyx_euler(FR_foot_tip[0:3, 0:3])
+        RL_foot_yaw, RL_foot_pitch, RL_foot_roll = rotation_to_zyx_euler(RL_foot_tip[0:3, 0:3])
+        RR_foot_yaw, RR_foot_pitch, RR_foot_roll = rotation_to_zyx_euler(RR_foot_tip[0:3, 0:3])
+
+        # To make it clear, three additional frames are attached.
+        # Roll frame is attached on rotation frame BEFORE roll rotation is performed.
+        # Pitch frame is attached on rotation frame BEFORE pitch rotation is performed.
+        # Yaw frame is attached on rotation frame BEFORE yaw rotation is performed, thus
+        # it aligns with the world frame axes (though origin is not at the same position).
+        FL_transforms[-1] = FL_transforms[-1] @ rotate_x(-FL_foot_roll)
+        FL_transforms += [rotate_y(-FL_foot_pitch), rotate_z(-FL_foot_yaw)]
+        FL_rotations_axes = self.rotation_axes[0:3] + [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+
+        FR_transforms[-1] = FR_transforms[-1] @ rotate_x(-FR_foot_roll)
+        FR_transforms += [rotate_y(-FR_foot_pitch), rotate_z(-FR_foot_yaw)]
+        FR_rotations_axes = self.rotation_axes[3:6] + [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+
+        RL_transforms[-1] = RL_transforms[-1] @ rotate_x(-RL_foot_roll)
+        RL_transforms += [rotate_y(-RL_foot_pitch), rotate_z(-RL_foot_yaw)]
+        RL_rotations_axes = self.rotation_axes[0:3] + [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+
+        RR_transforms[-1] = RR_transforms[-1] @ rotate_x(-RR_foot_roll)
+        RR_transforms += [rotate_y(-RR_foot_pitch), rotate_z(-RR_foot_yaw)]
+        RR_rotations_axes = self.rotation_axes[3:6] + [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+
+        J_FL = self.get_foot_tip_jacobian(body_frame['transform'], FL_transforms, FL_rotations_axes)
+        J_FR = self.get_foot_tip_jacobian(body_frame['transform'], FR_transforms, FR_rotations_axes)
+        J_RL = self.get_foot_tip_jacobian(body_frame['transform'], RL_transforms, RL_rotations_axes)
+        J_RR = self.get_foot_tip_jacobian(body_frame['transform'], RR_transforms, RR_rotations_axes)
+
+        return J_FL, J_FR, J_RL, J_RR
+
+    def get_body_jacobian(self, body_transform, transformations, rotation_axes):
+        T_i = body_transform
+        J_list = []
+
+        p_body = body_transform[0:3, 3]
+
+        for i in range(len(rotation_axes)):
+            # Multiply up to the i-th joint to get world frame->joint_i transform
+            T_i = T_i @ transformations[i]
+
+            # Joint i's origin in the world frame:
+            P_i = T_i[0:3, 3]
+
+            # Vector from joint i's origin to body frame origin
+            P_ib = p_body - P_i
+
+            # 'rotation_axes[i]' is the joint axis in joint i's joint frame.
+            # Multiply it by T_i's rotation part to express it in the world frame:
+            w = T_i[0:3, 0:3] @ rotation_axes[i]
+
+            J = np.concatenate((w, np.cross(w, P_ib)))
 
             J_list.append(J)
 
@@ -130,13 +200,23 @@ class Quadruped:
             }
         }
         """
-        # Body node (root of the tree)
+        # World node
+        world = {
+            'name': 'world',
+            'transform': np.eye(4),
+            'parent': None,
+            'children': {}
+        }
+
+        # Body node
         body = {
             'name': 'body',
-            'transform': np.eye(4),  # Root node: identity
+            'transform': self.body_transform,  # Root node: identity
             'parent': None,          # No parent
             'children': {}
         }
+
+        world['children']['body'] = body
 
         # -- FRONT LEFT LEG -- #
         # Shoulder 1 node
@@ -311,4 +391,4 @@ class Quadruped:
         RR_elbow['children']['RR_foot'] = RR_foot
 
         # Return the root of the entire kinematic tree
-        return body
+        return world
