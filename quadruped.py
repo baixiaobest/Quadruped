@@ -52,6 +52,11 @@ class Quadruped:
     def get_joint_angles(self):
         return self.joints
 
+    def set_body_tranform(self, T):
+        if not (T.shape[0] == 4 and T.shape[1] == 4):
+            raise(Exception("Transform should be 4x4"))
+        self.body_transform = T
+
     def get_transforms_list(self, node):
         transforms = []
         it = node
@@ -118,15 +123,16 @@ class Quadruped:
     def get_body_jacobians(self):
         world = self.get_KTtree()
         body_frame = world['children']['body']
+        T_b = body_frame['transform']
         FL_transforms = self.get_transforms_list(body_frame['children']['FL_shoulder_1'])
         FR_transforms = self.get_transforms_list(body_frame['children']['FR_shoulder_1'])
         RL_transforms = self.get_transforms_list(body_frame['children']['RL_shoulder_1'])
         RR_transforms = self.get_transforms_list(body_frame['children']['RR_shoulder_1'])
 
-        FL_foot_tip = body_frame @ reduce(lambda A, B: A @ B, FL_transforms, np.eye(4))
-        FR_foot_tip = body_frame @ reduce(lambda A, B: A @ B, FR_transforms, np.eye(4))
-        RL_foot_tip = body_frame @ reduce(lambda A, B: A @ B, RL_transforms, np.eye(4))
-        RR_foot_tip = body_frame @ reduce(lambda A, B: A @ B, RR_transforms, np.eye(4))
+        FL_foot_tip = T_b @ reduce(lambda A, B: A @ B, FL_transforms, np.eye(4))
+        FR_foot_tip = T_b @ reduce(lambda A, B: A @ B, FR_transforms, np.eye(4))
+        RL_foot_tip = T_b @ reduce(lambda A, B: A @ B, RL_transforms, np.eye(4))
+        RR_foot_tip = T_b @ reduce(lambda A, B: A @ B, RR_transforms, np.eye(4))
 
         FL_foot_yaw, FL_foot_pitch, FL_foot_roll = rotation_to_zyx_euler(FL_foot_tip[0:3, 0:3])
         FR_foot_yaw, FR_foot_pitch, FR_foot_roll = rotation_to_zyx_euler(FR_foot_tip[0:3, 0:3])
@@ -154,10 +160,10 @@ class Quadruped:
         RR_transforms += [rotate_y(-RR_foot_pitch), rotate_z(-RR_foot_yaw)]
         RR_rotations_axes = self.rotation_axes[3:6] + [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
 
-        J_FL = self.get_foot_tip_jacobian(body_frame['transform'], FL_transforms, FL_rotations_axes)
-        J_FR = self.get_foot_tip_jacobian(body_frame['transform'], FR_transforms, FR_rotations_axes)
-        J_RL = self.get_foot_tip_jacobian(body_frame['transform'], RL_transforms, RL_rotations_axes)
-        J_RR = self.get_foot_tip_jacobian(body_frame['transform'], RR_transforms, RR_rotations_axes)
+        J_FL = self.get_body_jacobian(body_frame['transform'], FL_transforms, FL_rotations_axes)
+        J_FR = self.get_body_jacobian(body_frame['transform'], FR_transforms, FR_rotations_axes)
+        J_RL = self.get_body_jacobian(body_frame['transform'], RL_transforms, RL_rotations_axes)
+        J_RR = self.get_body_jacobian(body_frame['transform'], RR_transforms, RR_rotations_axes)
 
         return J_FL, J_FR, J_RL, J_RR
 
