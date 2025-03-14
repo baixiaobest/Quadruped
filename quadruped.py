@@ -91,6 +91,13 @@ class Quadruped:
         return J_FL, J_FR, J_RL, J_RR
 
     def get_foot_tip_jacobian(self, body_transform, transformations, rotation_axes):
+        '''
+        The foot tip Jacobian of one of the foot.
+        :param body_transform:
+        :param transformations:
+        :param rotation_axes:
+        :return:
+        '''
         T_i = body_transform
         J_list = []
 
@@ -121,6 +128,10 @@ class Quadruped:
         return np.column_stack(J_list)
 
     def get_body_jacobians(self):
+        '''
+        Get body Jacobains (actuated joints + unactuated joints) from all 4 legs.
+        :return:
+        '''
         world = self.get_KTtree()
         body_frame = world['children']['body']
         T_b = body_frame['transform']
@@ -154,11 +165,11 @@ class Quadruped:
 
         RL_transforms[-1] = RL_transforms[-1] @ rotate_x(-RL_foot_roll)
         RL_transforms += [rotate_y(-RL_foot_pitch), rotate_z(-RL_foot_yaw)]
-        RL_rotations_axes = self.rotation_axes[0:3] + [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+        RL_rotations_axes = self.rotation_axes[6:9] + [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
 
         RR_transforms[-1] = RR_transforms[-1] @ rotate_x(-RR_foot_roll)
         RR_transforms += [rotate_y(-RR_foot_pitch), rotate_z(-RR_foot_yaw)]
-        RR_rotations_axes = self.rotation_axes[3:6] + [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+        RR_rotations_axes = self.rotation_axes[9:12] + [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
 
         J_FL = self.get_body_jacobian(body_frame['transform'], FL_transforms, FL_rotations_axes)
         J_FR = self.get_body_jacobian(body_frame['transform'], FR_transforms, FR_rotations_axes)
@@ -167,7 +178,57 @@ class Quadruped:
 
         return J_FL, J_FR, J_RL, J_RR
 
+    def get_actuated_body_jacobian(self):
+        '''
+        Get body Jacobian from actuated joints to body.
+        :return:
+        '''
+        J_FL, J_FR, J_RL, J_RR = self.get_body_jacobians()
+
+        H = np.zeros((18, 24))
+        H[0:6, 0:6] = J_FL
+        H[0:6, 6:12] = -J_FR
+        H[6:12, 6:12] = J_FR
+        H[6:12, 12:18] = -J_RL
+        H[12:18, 12:18] = J_RL
+        H[12:18, 18:24] = -J_RR
+
+        # Front two legs actuated joints are considered independent.
+        Ha = np.column_stack((H[:, 0:3], H[:, 6:9]))
+        # Rear two legs joints and foot contact joints are considered dependent.
+        Hp = np.column_stack((H[:, 3:6], H[:, 9:24]))
+
+        print(f"rank: {np.linalg.matrix_rank(Hp)}")
+        G = -np.linalg.pinv(Hp) @ Ha
+        G_FL = G[0:3, :]
+        G_FR = G[3:6, :]
+        G_RL = G[6:12, :]
+        G_RR = G[12:18, :]
+
+        M_1 = np.zeros((6, 6))
+        M_1[0:3, 0:3] = np.eye(3)
+        M_1[3:6, :] = G_FL
+        J_b1 = J_FL @ M_1
+
+        M_2 = np.zeros((6, 6))
+        M_2[0:3, 3:6] = np.eye(3)
+        M_2[3:6, :] = G_FR
+        J_b2 = J_FR @ M_2
+
+        J_b3 = J_RL @ G_RL
+
+        J_b4 = J_RR @ G_RR
+
+        return J_b1, J_b2, J_b3, J_b4
+
     def get_body_jacobian(self, body_transform, transformations, rotation_axes):
+        '''
+        Get body Jacobian from one of the leg.
+        :param body_transform:
+        :param transformations:
+        :param rotation_axes:
+        :return:
+        '''
         T_i = body_transform
         J_list = []
 
