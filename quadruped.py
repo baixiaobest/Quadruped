@@ -181,7 +181,11 @@ class Quadruped:
     def get_actuated_body_jacobian(self):
         '''
         Get body Jacobian from actuated joints to body.
-        :return:
+        Since the quadruped only have 6 degrees of freedom with 12 actuated joints and 12 unactuated contact joint,
+        we need to choose 6 independent actuated joints. The rest of 18 dependent joints include both actuated and
+        unactuated joints. We chose FL1, FL2, FR1, FR2, RL3, RR3 as independent joints (This is determined by experiments).
+        So the body Jacobian is thus linear mapping from those 6 independent joints velocities to body frame angular velocities.
+        :return: Four nearly identical body Jacobians, each of size 6x6.
         '''
         J_FL, J_FR, J_RL, J_RR = self.get_body_jacobians()
 
@@ -193,37 +197,40 @@ class Quadruped:
         H[12:18, 12:18] = J_RL
         H[12:18, 18:24] = -J_RR
 
-        #### DEBUG ####
-        Haa = np.column_stack((J_FL[:, 0:3], J_FR[:, 0:3], J_RL[:, 0:3], J_RR[:, 0:3],))
-        chosen_joint_jacobian_rank = np.linalg.matrix_rank(np.column_stack((J_FL[:, 0:3], J_FR[:, 0:3])))
+        Haa = np.column_stack((H[:, 0:2], H[:, 6:8], H[:, 14], H[:, 20]))
+        Hpp = np.column_stack((H[:, 2:6], H[:, 8:14], H[:, 15:20], H[:, 21:24]))
+        chosen_joint_jacobian_rank = np.linalg.matrix_rank(np.column_stack((J_FL[:, 0:2], J_FR[:, 0:2], J_RL[:, 2], J_RR[:, 2])))\
+
         print(f"chosen_joint_jacobian_rank: {chosen_joint_jacobian_rank}")
-        #### End Debug ####
+        print(f"rank(Hpp): {np.linalg.matrix_rank(Hpp)}")
 
-        # Front two legs actuated joints are considered independent.
-        Ha = np.column_stack((H[:, 0:3], H[:, 6:9]))
-        # Rear two legs joints and foot contact joints are considered dependent.
-        Hp = np.column_stack((H[:, 3:6], H[:, 9:24]))
-
-        print(f"rank: {np.linalg.matrix_rank(Hp)}")
-        G = -np.linalg.pinv(Hp) @ Ha
-        G_FL = G[0:3, :]
-        G_FR = G[3:6, :]
-        G_RL = G[6:12, :]
-        G_RR = G[12:18, :]
+        G = -np.linalg.pinv(Hpp) @ Haa
+        G_FL = G[0:4, :] # Joint FL3, FL4, FL5, FL6
+        G_FR = G[4:8, :] # Joint FR3, FR4, FR5, FR6
+        G_RL = G[8:13, :] # Joint RL1, RL2, RL4, RL5, RL6
+        G_RR = G[13:18, :] # Joint RR1, RR2, RR4, RR5, RR6
 
         M_1 = np.zeros((6, 6))
-        M_1[0:3, 0:3] = np.eye(3)
-        M_1[3:6, :] = G_FL
+        M_1[0:2, 0:2] = np.eye(2)
+        M_1[2:6, :] = G_FL
         J_b1 = J_FL @ M_1
 
         M_2 = np.zeros((6, 6))
-        M_2[0:3, 3:6] = np.eye(3)
-        M_2[3:6, :] = G_FR
+        M_2[0:2, 2:4] = np.eye(2)
+        M_2[2:6, :] = G_FR
         J_b2 = J_FR @ M_2
 
-        J_b3 = J_RL @ G_RL
+        M_3 = np.zeros((6, 6))
+        M_3[0:2, :] = G_RL[0:2, :]
+        M_3[2, 4] = 1
+        M_3[3:6, :] = G_RL[2:5, :]
+        J_b3 = J_RL @ M_3
 
-        J_b4 = J_RR @ G_RR
+        M_4 = np.zeros((6, 6))
+        M_4[0:2, :] = G_RR[0:2, :]
+        M_4[2, 5] = 1
+        M_4[3:6, :] = G_RR[2:5, :]
+        J_b4 = J_RR @ M_4
 
         return J_b1, J_b2, J_b3, J_b4
 

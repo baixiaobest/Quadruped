@@ -157,20 +157,20 @@ class MyTestCase(unittest.TestCase):
         quad = Quadruped(Lf, Lr, Ls, Lss, Lleg, Lfoot)
         joints = quad.get_joint_angles()
         joints['FL1'] = 0.1
-        joints['FL2'] = np.pi / 4
-        joints['FL3'] = -np.pi / 2
+        joints['FL2'] = 0.1
+        joints['FL3'] = -0.2
 
         joints['FR1'] = -0.1
-        joints['FR2'] = np.pi / 4
-        joints['FR3'] = -np.pi / 2
+        joints['FR2'] = 0.2
+        joints['FR3'] = 0
 
         joints['RL1'] = 0.1
-        joints['RL2'] = np.pi / 4
-        joints['RL3'] = -np.pi / 2
+        joints['RL2'] = 0
+        joints['RL3'] = 0.1
 
         joints['RR1'] = -0.1
-        joints['RR2'] = np.pi / 4
-        joints['RR3'] = -np.pi / 2
+        joints['RR2'] = 0.3
+        joints['RR3'] = 0.2
         quad.set_joint_angles(joints)
 
         J1, J2, J3, J4 = quad.get_actuated_body_jacobian()
@@ -184,7 +184,12 @@ class MyTestCase(unittest.TestCase):
         print(f"J2 - J3 norm: {np.linalg.norm(J2 - J3)}")
         print(f"J2 - J4 norm: {np.linalg.norm(J2 - J4)}")
         print(f"J3 - J4 norm: {np.linalg.norm(J3 - J4)}")
-
+        self.assertAlmostEqual(np.linalg.norm(J1 - J2), 0, places=3)
+        self.assertAlmostEqual(np.linalg.norm(J1 - J3), 0, places=3)
+        self.assertAlmostEqual(np.linalg.norm(J1 - J4), 0, places=3)
+        self.assertAlmostEqual(np.linalg.norm(J2 - J3), 0, places=3)
+        self.assertAlmostEqual(np.linalg.norm(J2 - J4), 0, places=3)
+        self.assertAlmostEqual(np.linalg.norm(J3 - J4), 0, places=3)
 
 if __name__ == '__main__':
     unittest.main()
