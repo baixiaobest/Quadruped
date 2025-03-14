@@ -19,25 +19,25 @@ class MyTestCase(unittest.TestCase):
     def test_foot_tip_jacobians(self):
         quad = self.get_quadruped()
         joints = quad.get_joint_angles()
-        joints['FLS2'] = -np.pi/4
-        joints['FLE'] = np.pi/2
-        joints['FRS2'] = -np.pi / 4
-        joints['FRE'] = np.pi / 2
+        joints['FL2'] = np.pi/4
+        joints['FL3'] = -np.pi/2
+        joints['FR2'] = np.pi / 4
+        joints['FR3'] = -np.pi / 2
         quad.set_joint_angles(joints)
         J_FL, J_FR, J_RL, J_RR = quad.get_foot_tip_jacobians()
 
-        p_fl1 = np.array([-self.Lss, 1/np.sqrt(2)*(self.Lfoot-self.Lleg), -1/np.sqrt(2)*(self.Lleg+self.Lfoot)])
-        p_fr1 = np.array([self.Lss, 1/np.sqrt(2)*(self.Lfoot-self.Lleg), -1/np.sqrt(2)*(self.Lleg+self.Lfoot)])
-        w1 = np.array([0, 1, 0])
+        p_fl1 = np.array([1/np.sqrt(2)*(self.Lfoot-self.Lleg), self.Lss, -1/np.sqrt(2)*(self.Lleg+self.Lfoot)])
+        p_fr1 = np.array([1/np.sqrt(2)*(self.Lfoot-self.Lleg), -self.Lss, -1/np.sqrt(2)*(self.Lleg+self.Lfoot)])
+        w1 = np.array([1, 0, 0])
         J_fl1 = np.concatenate((w1, np.cross(w1, p_fl1)))
         J_fr1 = np.concatenate((w1, np.cross(w1, p_fr1)))
 
-        p2 = np.array([0, 1 / np.sqrt(2) * (self.Lfoot - self.Lleg), -1 / np.sqrt(2) * (self.Lleg + self.Lfoot)])
-        w2 = np.array([1, 0, 0])
+        p2 = np.array([1 / np.sqrt(2) * (self.Lfoot - self.Lleg), 0, -1 / np.sqrt(2) * (self.Lleg + self.Lfoot)])
+        w2 = np.array([0, 1, 0])
         J_2 = np.concatenate((w2, np.cross(w2, p2)))
 
-        p3 = np.array([0, 1 / np.sqrt(2) * self.Lfoot, -1 / np.sqrt(2) * self.Lfoot])
-        w3 = np.array([1, 0, 0])
+        p3 = np.array([1 / np.sqrt(2) * self.Lfoot, 0, -1 / np.sqrt(2) * self.Lfoot])
+        w3 = np.array([0, 1, 0])
         J_3 = np.concatenate((w3, np.cross(w3, p3)))
 
         J_FL_analytical = np.column_stack((J_fl1, J_2, J_3))
@@ -52,27 +52,27 @@ class MyTestCase(unittest.TestCase):
     def test_body_jacobians(self):
         quad = self.get_quadruped()
         joints = quad.get_joint_angles()
-        joints['FLS2'] = -np.pi/4
-        joints['FLE'] = np.pi/2
-        joints['FRS2'] = -np.pi / 4
-        joints['FRE'] = np.pi / 2
+        joints['FL2'] = np.pi/4
+        joints['FL3'] = -np.pi/2
+        joints['FR2'] = np.pi / 4
+        joints['FR3'] = -np.pi / 2
         quad.set_joint_angles(joints)
         quad.set_body_tranform(rotate_z(np.pi/2))
 
-        p1 = np.array([self.Lf, self.Ls, 0])
-        w1 = np.array([-1, 0, 0])
+        p1 = np.array([self.Ls, -self.Lf, 0])
+        w1 = np.array([0, 1, 0])
         J_1 = np.concatenate((w1, np.cross(w1, p1)))
 
-        p2 = np.array([self.Lf, self.Ls+self.Lss, 0])
-        w2 = np.array([0, 1, 0])
+        p2 = np.array([self.Ls+self.Lss, -self.Lf,  0])
+        w2 = np.array([-1, 0, 0])
         J_2 = np.concatenate((w2, np.cross(w2, p2)))
 
-        p3 = np.array([self.Lf - 1/np.sqrt(2) * self.Lleg, self.Ls + self.Lss, 1/np.sqrt(2) * self.Lleg])
-        w3 = np.array([0, 1, 0])
+        p3 = np.array([self.Ls + self.Lss, 1/np.sqrt(2) * self.Lleg - self.Lf, 1/np.sqrt(2) * self.Lleg])
+        w3 = np.array([-1, 0, 0])
         J_3 = np.concatenate((w3, np.cross(w3, p3)))
 
-        p4 = np.array([self.Lf + 1/np.sqrt(2)*(self.Lfoot - self.Lleg), self.Ls + self.Lss, 1/np.sqrt(2)*(self.Lleg + self.Lfoot)])
-        w4 = np.array([0, 1, 0])
+        p4 = np.array([self.Ls + self.Lss, -(self.Lf + 1/np.sqrt(2)*(self.Lfoot - self.Lleg)), 1/np.sqrt(2)*(self.Lleg + self.Lfoot)])
+        w4 = np.array([0, 1/np.sqrt(2), 1/np.sqrt(2)])
         J_4 = np.concatenate((w4, np.cross(w4, p4)))
 
         p5 = p4
@@ -101,21 +101,21 @@ class MyTestCase(unittest.TestCase):
         Lfoot = 1
         quad = Quadruped(Lf, Lr, Ls, Lss, Lleg, Lfoot)
         joints = quad.get_joint_angles()
-        joints['FLS1'] = 0.1
-        joints['FLS2'] = -np.pi / 4
-        joints['FLE'] = np.pi / 2
+        joints['FL1'] = 0.1
+        joints['FL2'] = np.pi / 4
+        joints['FL3'] = -np.pi / 2
 
-        joints['FRS1'] = -0.1
-        joints['FRS2'] = -np.pi / 4
-        joints['FRE'] = np.pi / 2
+        joints['FR1'] = -0.1
+        joints['FR2'] = np.pi / 4
+        joints['FR3'] = -np.pi / 2
 
-        joints['RLS1'] = 0.1
-        joints['RLS2'] = -np.pi / 4
-        joints['RLE'] = np.pi / 2
+        joints['RL1'] = 0.1
+        joints['RL2'] = np.pi / 4
+        joints['RL3'] = -np.pi / 2
 
-        joints['RRS1'] = -0.1
-        joints['RRS2'] = -np.pi / 4
-        joints['RRE'] = np.pi / 2
+        joints['RR1'] = -0.1
+        joints['RR2'] = np.pi / 4
+        joints['RR3'] = -np.pi / 2
         quad.set_joint_angles(joints)
         # quad.set_body_tranform(rotate_z(np.pi / 2))
 
@@ -124,6 +124,12 @@ class MyTestCase(unittest.TestCase):
         print(f"J2: \n {J2}")
         print(f"J3: \n {J3}")
         print(f"J4: \n {J4}")
+        print(f"J1 - J2 norm: {np.linalg.norm(J1 - J2)}")
+        print(f"J1 - J3 norm: {np.linalg.norm(J1 - J3)}")
+        print(f"J1 - J4 norm: {np.linalg.norm(J1 - J4)}")
+        print(f"J2 - J3 norm: {np.linalg.norm(J2 - J3)}")
+        print(f"J2 - J4 norm: {np.linalg.norm(J2 - J4)}")
+        print(f"J3 - J4 norm: {np.linalg.norm(J3 - J4)}")
 
 
 if __name__ == '__main__':

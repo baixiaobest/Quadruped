@@ -14,32 +14,32 @@ class Quadruped:
         # [front left joints, front right joints, rear left joints, rear right joints]
         # each group, i.e front left joints, contains 3 joints.
         self.joints = {
-            'FLS1': 0,
-            'FLS2': 0,
-            'FLE': 0,
-            'FRS1': 0,
-            'FRS2': 0,
-            'FRE': 0,
-            'RLS1': 0,
-            'RLS2': 0,
-            'RLE': 0,
-            'RRS1': 0,
-            'RRS2': 0,
-            'RRE': 0
+            'FL1': 0,
+            'FL2': 0,
+            'FL3': 0,
+            'FR1': 0,
+            'FR2': 0,
+            'FR3': 0,
+            'RL1': 0,
+            'RL2': 0,
+            'RL3': 0,
+            'RR1': 0,
+            'RR2': 0,
+            'RR3': 0
         }
         self.rotation_axes = [
-            np.array([0, 1, 0]),
-            np.array([1, 0, 0]),
             np.array([1, 0, 0]),
             np.array([0, 1, 0]),
-            np.array([1, 0, 0]),
-            np.array([1, 0, 0]),
             np.array([0, 1, 0]),
             np.array([1, 0, 0]),
-            np.array([1, 0, 0]),
+            np.array([0, 1, 0]),
             np.array([0, 1, 0]),
             np.array([1, 0, 0]),
-            np.array([1, 0, 0])
+            np.array([0, 1, 0]),
+            np.array([0, 1, 0]),
+            np.array([1, 0, 0]),
+            np.array([0, 1, 0]),
+            np.array([0, 1, 0]),
         ]
 
         self.body_transform = np.eye(4)
@@ -78,10 +78,10 @@ class Quadruped:
 
         world = self.get_KTtree()
         body_frame = world['children']['body']
-        FL_transforms = self.get_transforms_list(body_frame['children']['FL_shoulder_1'])
-        FR_transforms = self.get_transforms_list(body_frame['children']['FR_shoulder_1'])
-        RL_transforms = self.get_transforms_list(body_frame['children']['RL_shoulder_1'])
-        RR_transforms = self.get_transforms_list(body_frame['children']['RR_shoulder_1'])
+        FL_transforms = self.get_transforms_list(body_frame['children']['FL1'])
+        FR_transforms = self.get_transforms_list(body_frame['children']['FR1'])
+        RL_transforms = self.get_transforms_list(body_frame['children']['RL1'])
+        RR_transforms = self.get_transforms_list(body_frame['children']['RR1'])
 
         J_FL = self.get_foot_tip_jacobian(body_frame['transform'], FL_transforms, self.rotation_axes[0:3])
         J_FR = self.get_foot_tip_jacobian(body_frame['transform'], FR_transforms, self.rotation_axes[3:6])
@@ -135,10 +135,10 @@ class Quadruped:
         world = self.get_KTtree()
         body_frame = world['children']['body']
         T_b = body_frame['transform']
-        FL_transforms = self.get_transforms_list(body_frame['children']['FL_shoulder_1'])
-        FR_transforms = self.get_transforms_list(body_frame['children']['FR_shoulder_1'])
-        RL_transforms = self.get_transforms_list(body_frame['children']['RL_shoulder_1'])
-        RR_transforms = self.get_transforms_list(body_frame['children']['RR_shoulder_1'])
+        FL_transforms = self.get_transforms_list(body_frame['children']['FL1'])
+        FR_transforms = self.get_transforms_list(body_frame['children']['FR1'])
+        RL_transforms = self.get_transforms_list(body_frame['children']['RL1'])
+        RR_transforms = self.get_transforms_list(body_frame['children']['RR1'])
 
         FL_foot_tip = T_b @ reduce(lambda A, B: A @ B, FL_transforms, np.eye(4))
         FR_foot_tip = T_b @ reduce(lambda A, B: A @ B, FR_transforms, np.eye(4))
@@ -288,174 +288,174 @@ class Quadruped:
         # -- FRONT LEFT LEG -- #
         # Shoulder 1 node
         FL_s1 = {
-            'name': 'FL_shoulder_1',
+            'name': 'FL1',
             'transform': (
-                translate(-self.Ls, self.Lf, 0) @
-                rotate_y(self.joints['FLS1'])
+                translate(self.Lf, self.Ls, 0) @
+                rotate_x(self.joints['FL1'])
             ),
             'parent': body,  # reference the parent node
             'children': {}
         }
-        body['children']['FL_shoulder_1'] = FL_s1
+        body['children']['FL1'] = FL_s1
 
         # Shoulder 2 node
         FL_s2 = {
-            'name': 'FL_shoulder_2',
+            'name': 'FL2',
             'transform': (
-                translate(-self.Lss, 0, 0) @
-                rotate_x(self.joints['FLS2'] - np.pi/2)
+                translate(0, self.Lss, 0) @
+                rotate_y(self.joints['FL2'])
             ),
             'parent': FL_s1,
             'children': {}
         }
-        FL_s1['children']['FL_shoulder_2'] = FL_s2
+        FL_s1['children']['FL2'] = FL_s2
 
         # Elbow node
-        FL_elbow = {
-            'name': 'FL_elbow',
+        FL3 = {
+            'name': 'FL3',
             'transform': (
-                translate(0, self.Lleg, 0) @
-                rotate_x(self.joints['FLE'])
+                translate(0, 0, -self.Lleg) @
+                rotate_y(self.joints['FL3'])
             ),
             'parent': FL_s2,
             'children': {}
         }
-        FL_s2['children']['FL_elbow'] = FL_elbow
+        FL_s2['children']['FL3'] = FL3
 
         # Foot node (child of elbow)
         FL_foot = {
             'name': 'FL_foot',
-            'transform': translate(0, self.Lfoot, 0),
-            'parent': FL_elbow,
+            'transform': translate(0, 0, -self.Lfoot),
+            'parent': FL3,
             'children': {}
         }
-        FL_elbow['children']['FL_foot'] = FL_foot
+        FL3['children']['FL_foot'] = FL_foot
 
         # -- FRONT RIGHT LEG -- #
         FR_s1 = {
-            'name': 'FR_shoulder_1',
+            'name': 'FR1',
             'transform': (
-                translate(self.Ls, self.Lf, 0) @
-                rotate_y(self.joints['FRS1'])
+                translate(self.Lf, -self.Ls, 0) @
+                rotate_x(self.joints['FR1'])
             ),
             'parent': body,
             'children': {}
         }
-        body['children']['FR_shoulder_1'] = FR_s1
+        body['children']['FR1'] = FR_s1
 
         FR_s2 = {
-            'name': 'FR_shoulder_2',
+            'name': 'FR2',
             'transform': (
-                translate(self.Lss, 0, 0) @
-                rotate_x(self.joints['FRS2'] - np.pi/2)
+                translate(0, -self.Lss, 0) @
+                rotate_y(self.joints['FR2'])
             ),
             'parent': FR_s1,
             'children': {}
         }
-        FR_s1['children']['FR_shoulder_2'] = FR_s2
+        FR_s1['children']['FR2'] = FR_s2
 
-        FR_elbow = {
-            'name': 'FR_elbow',
+        FR3 = {
+            'name': 'FR3',
             'transform': (
-                translate(0, self.Lleg, 0) @
-                rotate_x(self.joints['FRE'])
+                translate(0, 0, -self.Lleg) @
+                rotate_y(self.joints['FR3'])
             ),
             'parent': FR_s2,
             'children': {}
         }
-        FR_s2['children']['FR_elbow'] = FR_elbow
+        FR_s2['children']['FR3'] = FR3
 
         FR_foot = {
             'name': 'FR_foot',
-            'transform': translate(0, self.Lfoot, 0),
-            'parent': FR_elbow,
+            'transform': translate(0, 0, -self.Lfoot),
+            'parent': FR3,
             'children': {}
         }
-        FR_elbow['children']['FR_foot'] = FR_foot
+        FR3['children']['FR_foot'] = FR_foot
 
         # -- REAR LEFT LEG -- #
         RL_s1 = {
-            'name': 'RL_shoulder_1',
+            'name': 'RL1',
             'transform': (
-                translate(-self.Ls, -self.Lr, 0) @
-                rotate_y(self.joints['RLS1'])
+                translate(-self.Lr, self.Ls, 0) @
+                rotate_x(self.joints['RL1'])
             ),
             'parent': body,
             'children': {}
         }
-        body['children']['RL_shoulder_1'] = RL_s1
+        body['children']['RL1'] = RL_s1
 
         RL_s2 = {
-            'name': 'RL_shoulder_2',
+            'name': 'RL2',
             'transform': (
-                translate(-self.Lss, 0, 0) @
-                rotate_x(self.joints['RLS2'] - np.pi/2)
+                translate(0, self.Lss, 0) @
+                rotate_y(self.joints['RL2'])
             ),
             'parent': RL_s1,
             'children': {}
         }
-        RL_s1['children']['RL_shoulder_2'] = RL_s2
+        RL_s1['children']['RL2'] = RL_s2
 
-        RL_elbow = {
-            'name': 'RL_elbow',
+        RL3 = {
+            'name': 'RL3',
             'transform': (
-                translate(0, self.Lleg, 0) @
-                rotate_x(self.joints['RLE'])
+                translate(0, 0, -self.Lleg) @
+                rotate_y(self.joints['RL3'])
             ),
             'parent': RL_s2,
             'children': {}
         }
-        RL_s2['children']['RL_elbow'] = RL_elbow
+        RL_s2['children']['RL3'] = RL3
 
         RL_foot = {
             'name': 'RL_foot',
-            'transform': translate(0, self.Lfoot, 0),
-            'parent': RL_elbow,
+            'transform': translate(0, 0, -self.Lfoot),
+            'parent': RL3,
             'children': {}
         }
-        RL_elbow['children']['RL_foot'] = RL_foot
+        RL3['children']['RL_foot'] = RL_foot
 
         # -- REAR RIGHT LEG -- #
         RR_s1 = {
-            'name': 'RR_shoulder_1',
+            'name': 'RR1',
             'transform': (
-                translate(self.Ls, -self.Lr, 0) @
-                rotate_y(self.joints['RRS1'])
+                translate(-self.Lr, -self.Ls, 0) @
+                rotate_x(self.joints['RR1'])
             ),
             'parent': body,
             'children': {}
         }
-        body['children']['RR_shoulder_1'] = RR_s1
+        body['children']['RR1'] = RR_s1
 
         RR_s2 = {
-            'name': 'RR_shoulder_2',
+            'name': 'RR2',
             'transform': (
-                translate(self.Lss, 0, 0) @
-                rotate_x(self.joints['RRS2'] - np.pi/2)
+                translate(0, -self.Lss, 0) @
+                rotate_y(self.joints['RR2'])
             ),
             'parent': RR_s1,
             'children': {}
         }
-        RR_s1['children']['RR_shoulder_2'] = RR_s2
+        RR_s1['children']['RR2'] = RR_s2
 
-        RR_elbow = {
-            'name': 'RR_elbow',
+        RR3 = {
+            'name': 'RR3',
             'transform': (
-                translate(0, self.Lleg, 0) @
-                rotate_x(self.joints['RRE'])
+                translate(0, 0, -self.Lleg) @
+                rotate_y(self.joints['RR3'])
             ),
             'parent': RR_s2,
             'children': {}
         }
-        RR_s2['children']['RR_elbow'] = RR_elbow
+        RR_s2['children']['RR3'] = RR3
 
         RR_foot = {
             'name': 'RR_foot',
-            'transform': translate(0, self.Lfoot, 0),
-            'parent': RR_elbow,
+            'transform': translate(0, 0, -self.Lfoot),
+            'parent': RR3,
             'children': {}
         }
-        RR_elbow['children']['RR_foot'] = RR_foot
+        RR3['children']['RR_foot'] = RR_foot
 
         # Return the root of the entire kinematic tree
         return world

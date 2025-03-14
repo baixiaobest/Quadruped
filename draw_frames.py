@@ -87,18 +87,18 @@ def draw_kinematic_tree(root_node, ax=None):
 if __name__=="__main__":
     quad = Quadruped()
     joints = quad.get_joint_angles()
-    joints['FLS1'] = -0.1
-    joints['FLS2'] = -0.3
-    joints['FLE'] = 0.6
-    joints['FRS1'] = 0.1
-    joints['FRS2'] = -0.3
-    joints['FRE'] = 0.6
-    joints['RLS1'] = -0.1
-    joints['RLS2'] = -0.3
-    joints['RLE'] = 0.6
-    joints['RRS1'] = 0.1
-    joints['RRS2'] = -0.3
-    joints['RRE'] = 0.6
+    joints['FL1'] = -0.1
+    joints['FL2'] = 0.3
+    joints['FL3'] = -0.6
+    joints['FR1'] = 0.1
+    joints['FR2'] = 0.3
+    joints['FR3'] = -0.6
+    joints['RL1'] = -0.1
+    joints['RL2'] = 0.3
+    joints['RL3'] = -0.6
+    joints['RR1'] = 0.1
+    joints['RR2'] = 0.3
+    joints['RR3'] = -0.6
     quad.set_joint_angles(joints)
     root = quad.get_KTtree()
     draw_kinematic_tree(root)
