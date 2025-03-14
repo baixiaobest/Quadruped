@@ -193,6 +193,12 @@ class Quadruped:
         H[12:18, 12:18] = J_RL
         H[12:18, 18:24] = -J_RR
 
+        #### DEBUG ####
+        Haa = np.column_stack((J_FL[:, 0:3], J_FR[:, 0:3], J_RL[:, 0:3], J_RR[:, 0:3],))
+        chosen_joint_jacobian_rank = np.linalg.matrix_rank(np.column_stack((J_FL[:, 0:3], J_FR[:, 0:3])))
+        print(f"chosen_joint_jacobian_rank: {chosen_joint_jacobian_rank}")
+        #### End Debug ####
+
         # Front two legs actuated joints are considered independent.
         Ha = np.column_stack((H[:, 0:3], H[:, 6:9]))
         # Rear two legs joints and foot contact joints are considered dependent.
