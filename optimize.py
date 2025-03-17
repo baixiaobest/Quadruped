@@ -1,9 +1,7 @@
 import cvxpy as cp
 import numpy as np
-from sympy.abc import lamda
 
-
-def foot_tip_IK_LM(x_des, theta_min, theta_max, theta0, Jac, FK, max_iter=50, epsilon=1e-5):
+def foot_tip_IK_LM(x_des, theta0, theta_min, theta_max, Jac, FK, max_iter=50, epsilon=1e-5):
     '''
     Compute the foot tip inverse kinematics using the Levenberg-Marquardt method with box constraints.
 

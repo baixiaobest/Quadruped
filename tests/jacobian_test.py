@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Add the parent directory (root) to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import unittest
 from quadruped import Quadruped
 import numpy as np

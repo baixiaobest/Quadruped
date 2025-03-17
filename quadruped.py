@@ -1,9 +1,18 @@
 import numpy as np
 from utility import *
 from functools import reduce
+from optimize import foot_tip_IK_LM
 
 class Quadruped:
-    def __init__(self, Lf=0.3, Lr=0.3, Ls=0.2, Lss=0.1, Lleg=0.3, Lfoot=0.3):
+    def __init__(self, Lf=0.3, Lr=0.3, Ls=0.2, Lss=0.1, Lleg=0.3, Lfoot=0.3, joint_angles_min=[-np.pi/2, -np.pi/2, -np.pi/2], joint_angles_max=[np.pi/2, np.pi/2, np.pi/2]):
+        self.Lf = Lf
+        self.Lr = Lr
+        self.Ls = Ls
+        self.Lss = Lss
+        self.Lleg = Lleg
+        self.Lfoot = Lfoot
+        self.joint_angles_min = joint_angles_min
+        self.joint_angles_max = joint_angles_max
         self.Lf = Lf
         self.Lr = Lr
         self.Ls = Ls
@@ -41,13 +50,18 @@ class Quadruped:
             np.array([0, 1, 0]),
             np.array([0, 1, 0]),
         ]
+        self.joint_angles_min = joint_angles_min
+        self.joint_angles_max = joint_angles_max
 
         self.body_transform = np.eye(4)
 
     def set_joint_angles(self, joints):
-        if not len(joints) == 12:
-            raise(Exception("Joints number should be 12"))
-        self.joints = joints
+        for joint in joints:
+            if joint not in self.joints:
+                raise(Exception(f"Joint {joint} is not valid."))
+            if joints[joint] < self.joint_angles_min[0] or joints[joint] > self.joint_angles_max[0]:
+                raise(Exception(f"Joint {joint} is out of bounds."))
+            self.joints[joint] = joints[joint]
 
     def get_joint_angles(self):
         return self.joints
@@ -68,6 +82,25 @@ class Quadruped:
             # Otherwise, move to the (only) child
             it = list(it['children'].values())[0]
         return transforms
+    
+    def get_foot_tip_transforms(self):
+        '''
+        Get the transformation matrices from body to foot tip.
+        :return: List of 4 transformation matrices.
+        '''
+        world = self.get_KTtree()
+        body_frame = world['children']['body']
+        FL_transforms = self.get_transforms_list(body_frame['children']['FL1'])
+        FR_transforms = self.get_transforms_list(body_frame['children']['FR1'])
+        RL_transforms = self.get_transforms_list(body_frame['children']['RL1'])
+        RR_transforms = self.get_transforms_list(body_frame['children']['RR1'])
+
+        FL_foot_tip = self.body_transform @ reduce(lambda A, B: A @ B, FL_transforms, np.eye(4))
+        FR_foot_tip = self.body_transform @ reduce(lambda A, B: A @ B, FR_transforms, np.eye(4))
+        RL_foot_tip = self.body_transform @ reduce(lambda A, B: A @ B, RL_transforms, np.eye(4))
+        RR_foot_tip = self.body_transform @ reduce(lambda A, B: A @ B, RR_transforms, np.eye(4))
+
+        return FL_foot_tip, FR_foot_tip, RL_foot_tip, RR_foot_tip
 
     def get_foot_tip_jacobians(self):
         '''
@@ -266,6 +299,46 @@ class Quadruped:
             J_list.append(J)
 
         return np.column_stack(J_list)
+    
+    def get_foot_tips_IK(self, fl_des, fr_des, rl_des, rr_des):
+        '''
+        Compute the foot tip inverse kinematics using the Levenberg-Marquardt method with box constraints.
+        :param fl_des: Desired foot tip position of front left leg in R^3.
+        :param fr_des: Desired foot tip position of front right leg in R^3.
+        :param rl_des: Desired foot tip position of rear left leg in R^3.
+        :param rr_des: Desired foot tip position of rear right leg in R^3.
+        :return: Estimated joint angles that satisfy the inverse kinematics.
+        '''
+        joints_list = [[self.joints['FL1'], self.joints['FL2'], self.joints['FL3']],
+                       [self.joints['FR1'], self.joints['FR2'], self.joints['FR3']],
+                       [self.joints['RL1'], self.joints['RL2'], self.joints['RL3']],
+                       [self.joints['RR1'], self.joints['RR2'], self.joints['RR3']]]
+        original_joints = self.joints.copy()
+        x_des_list = [fl_des, fr_des, rl_des, rr_des]
+        names = ['FL', 'FR', 'RL', 'RR']
+
+        theta_res={}
+
+        for i in range(4):
+            x_des = x_des_list[i]
+            joints = np.array(joints_list[i])
+
+            def Jac(theta):
+                self.set_joint_angles({f'{names[i]}1': theta[0], f'{names[i]}2': theta[1], f'{names[i]}3': theta[2]})
+                J = self.get_foot_tip_jacobians()[i]
+                return J
+            
+            def FK(theta):
+                self.set_joint_angles({f'{names[i]}1': theta[0], f'{names[i]}2': theta[1], f'{names[i]}3': theta[2]})
+                T = self.get_foot_tip_transforms()[i]
+                return T[0:3, 3]
+            
+            theta = foot_tip_IK_LM(x_des, joints, self.joint_angles_min, self.joint_angles_max, Jac, FK)
+            theta_res[names[i]] = theta
+
+        self.joints = original_joints
+                
+        return theta_res
 
     def get_KTtree(self):
         """
