@@ -199,10 +199,10 @@ class Quadruped:
 
         Haa = np.column_stack((H[:, 0:2], H[:, 6:8], H[:, 14], H[:, 20]))
         Hpp = np.column_stack((H[:, 2:6], H[:, 8:14], H[:, 15:20], H[:, 21:24]))
-        chosen_joint_jacobian_rank = np.linalg.matrix_rank(np.column_stack((J_FL[:, 0:2], J_FR[:, 0:2], J_RL[:, 2], J_RR[:, 2])))\
 
-        print(f"chosen_joint_jacobian_rank: {chosen_joint_jacobian_rank}")
-        print(f"rank(Hpp): {np.linalg.matrix_rank(Hpp)}")
+        # chosen_joint_jacobian_rank = np.linalg.matrix_rank(np.column_stack((J_FL[:, 0:2], J_FR[:, 0:2], J_RL[:, 2], J_RR[:, 2])))\
+        # print(f"chosen_joint_jacobian_rank: {chosen_joint_jacobian_rank}")
+        # print(f"rank(Hpp): {np.linalg.matrix_rank(Hpp)}")
 
         G = -np.linalg.pinv(Hpp) @ Haa
         G_FL = G[0:4, :] # Joint FL3, FL4, FL5, FL6
