@@ -18,9 +18,10 @@ def foot_tip_IK_LM(x_des, theta0, theta_min, theta_max, Jac, FK, max_iter=50, ep
 
     theta_i = theta0
     lambda_param = 1
+
     for i in range(max_iter):
         # Define the optimization variable
-        theta = cp.Variable(3)
+        theta = cp.Variable(x_des.shape[0])
         J = Jac(theta_i)
         x_i = FK(theta_i)
         err = x_des - x_i

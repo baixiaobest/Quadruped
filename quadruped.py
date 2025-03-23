@@ -317,7 +317,7 @@ class Quadruped:
 
             def Jac(theta):
                 self.set_joint_angles({f'{names[i]}1': theta[0], f'{names[i]}2': theta[1], f'{names[i]}3': theta[2]})
-                J = self.get_foot_tip_jacobians()[i]
+                J = self.get_foot_tip_jacobians()[i][3:6, :]
                 return J
             
             def FK(theta):
@@ -326,7 +326,9 @@ class Quadruped:
                 return T[0:3, 3]
             
             theta = foot_tip_IK_LM(x_des, joints, self.joint_angles_min, self.joint_angles_max, Jac, FK)
-            theta_res[names[i]] = theta
+            theta_res[f"{names[i]}1"] = theta[0]
+            theta_res[f"{names[i]}2"] = theta[1]
+            theta_res[f"{names[i]}3"] = theta[2]
 
         self.joints = original_joints
                 
