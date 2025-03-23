@@ -29,24 +29,23 @@ def plot_returns(returns_list):
     plt.ylabel('Variance')
     plt.title(f'Windowed Variance over Episodes, window={window}')
 
-def training():
-    random.seed(20) # this would affect the scenarios at which the agent is trained
-    LOAD = True
+def training(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_epsilon=0.1):
+    random.seed(seed)
     # Create the environment
     env = DoubleIntegrator1D(
-        delta_t=0.05, target_x=0, x_bound=[-10, 10], v_bound=[-5, 5], v_penalty=0.1, time_penalty=0.1, x_epsilon=0.5, vx_epsilon=0.2, debug=False)
+        delta_t=0.05, target_x=0, x_bound=[-10, 10], v_bound=[-5, 5], v_penalty=0.1, time_penalty=0.1, x_epsilon=x_epsilon, vx_epsilon=vx_epsilon, debug=False)
 
     # Create the policy network
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
 
-    if LOAD:
+    if load:
         policy.load_state_dict(torch.load('RL/training/models/double_integrator_REINFORCE.pth'))
 
     # Create optimizer
     optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
 
     # Create the REINFORCE agent
-    reinforce = REINFORCE(env, policy, optimizer, num_episodes=3000, max_steps=200, gamma=0.99)
+    reinforce = REINFORCE(env, policy, optimizer, num_episodes=num_episodes, max_steps=max_steps, gamma=0.99)
 
     # Train the agent
     reinforce.train()
@@ -61,7 +60,7 @@ def training():
 def inference():
     # Create the environment
     env = DoubleIntegrator1D(
-        delta_t=0.05, target_x=0, x_bound=[-10, 10], v_bound=[-5, 5], x_epsilon=0.5, vx_epsilon=0.2, debug=False)
+        delta_t=0.05, target_x=0, x_bound=[-10, 10], v_bound=[-5, 5], x_epsilon=0.1, vx_epsilon=0.05, debug=False)
 
     # Create the policy network
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
@@ -154,6 +153,73 @@ def visualize_policy(policy, x_range=(-10, 10), vx_range=(-5, 5), resolution=50)
     ax.set_title('Policy Visualization')
     fig.colorbar(surf, shrink=0.5, aspect=5)
 
+def inference_sweep(file_name, x_range=(-5, 5), v_range=(-3, 3), grid_resolution=100, max_steps=100):
+    """
+    Sweeps the initial state space and evaluates the policy.
+    
+    Args:
+        x_range (tuple): Range (min, max) for initial position.
+        v_range (tuple): Range (min, max) for initial velocity.
+        grid_resolution (int): Number of initial states per dimension.
+        max_steps (int): Maximum steps to run each episode.
+    """
+    # Create the environment
+    env = DoubleIntegrator1D(
+        delta_t=0.05,
+        target_x=0,
+        x_bound=[-10, 10],
+        v_bound=[-5, 5],
+        x_epsilon=0.1,
+        vx_epsilon=0.05,
+        debug=False
+    )
+    
+    # Create the policy network and load trained weights
+    policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
+    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.eval()
+    
+    success_count = 0
+    failure_count = 0
+
+    # Generate grid of initial states
+    x_vals = np.linspace(x_range[0], x_range[1], grid_resolution)
+    v_vals = np.linspace(v_range[0], v_range[1], grid_resolution)
+    
+    for x0 in x_vals:
+        for v0 in v_vals:
+            # Reset the environment and override the initial state
+            env.set_state(x0, v0)
+            state = env.get_state()
+
+            # Run the episode for up to max_steps
+            for step in range(max_steps):
+                state_tensor = torch.tensor(state, dtype=torch.float32)
+                actions_prob = policy.forward(state_tensor)
+                dist = torch.distributions.Categorical(actions_prob)
+                action_idx = dist.sample()
+                action = policy.get_action(action_idx).item()
+                
+                state, reward, done = env.step(action)
+                if done:
+                    break
+            
+            # Query the environment to determine if the goal was reached
+            if env.goal_reached():
+                success_count += 1
+            else:
+                failure_count += 1
+
+    print("Success count: ", success_count)
+    print("Failure count: ", failure_count)
+
+
 if __name__=='__main__':
-    inference()
-    # training()
+    # inference_sweep(file_name='double_integrator_REINFORCE', x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=200)
+    
+    # inference()
+
+    training(load=False, seed=20, num_episodes=3000, max_steps=200, x_epsilon=0.5, vx_epsilon=1)
+    training(load=True, seed=21, num_episodes=1000, max_steps=200, x_epsilon=0.2, vx_epsilon=0.5)
+    training(load=True, seed=22, num_episodes=1000, max_steps=200, x_epsilon=0.1, vx_epsilon=0.1)
+    training(load=True, seed=24, num_episodes=1000, max_steps=200, x_epsilon=0.1, vx_epsilon=0.05)

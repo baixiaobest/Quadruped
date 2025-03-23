@@ -1,22 +1,11 @@
 REINFORCE double integrator1d
 
-Decent training parameters:
-env = DoubleIntegrator1D(
-        delta_t=0.05, target_x=0, x_bound=[-10, 10], v_bound=[-5, 5], x_epsilon=0.5, vx_epsilon=0.2, debug=True)
-policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
-reinforce = REINFORCE(env, policy, optimizer, num_episodes=1000, max_steps=100, gamma=0.99)
+////////////////////////////////////////
+//REINFORCE with double integrator1d
+///////////////////////////////////////
 
-double_integrator_REINFORCE_Oscillate training parameters:
-env = DoubleIntegrator1D(
-        delta_t=0.05, target_x=0, x_bound=[-10, 10], v_bound=[-5, 5], x_epsilon=0.5, vx_epsilon=0.2, debug=True)
-policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
-reinforce = REINFORCE(env, policy, optimizer, num_episodes=1000, max_steps=100, gamma=0.99)
-
-
-Findings:
-
-REINFORCE with double integrator1d
-
+***Findings***
+---------------------------------------------------------------------------------------------------------
 1. Oscilliatory behavior: We can observe there is Oscilliatory behavior given an initial condition.
 This means the policy is not optimal, and probably the policy does not care as long as it is staying
 close to the goal.
@@ -25,13 +14,16 @@ close to the goal.
 of the environment, which will penalize the boundary violation. So need to make sure that episode length
 is long enough so the algorithm can explore these regions.
 
-3. Time penalty: We may need to penalize the time the point mass spends not reaching the region, so there
+3. Time penalty: We may need to penalize the time the point mass spends not reaching the goal region, so there
 is an incentive to reach it earlier.
 
-4. Behavior that leads to boundary: During inference, so trajectory leads to boundary violation. Maybe the
+4. Boundary violation: During inference, trajectory leads to boundary violation. Maybe the
 boundary violation is not penalized enough so the algorithm does not know the seriousness of such behavior.
 
-Potential mitigation techniques:
+5. Slow learning: Learning is slow due to large variance in the REINFORCE method.
+
+***Potential mitigation techniques***
+------------------------------------------------------------------------------------
 Oscilliatory behavior:
 1. Need to penalize overshooting behavior, such as rapid change in control.
 2. Dampen the control change, through a filter or something.
@@ -42,9 +34,30 @@ Boundary violation:
 3. Curriculum Learning: Progressively increase the episode length.
 4. Soft boundary penalty: Not stopping the episode during boundary violation, instead use non-linear penalty function.
 
+Slow learning:
+1. Curriculum Learning: Progress from easier task first and guide the learning process.
+
 Time penalty:
 1. Constant cumulative time penalty.
 
 Algorithmic consideration:
 1. Policy network layer depth and width change.
 2. Policy network random initialization.
+
+***Testings summary***
+-----------------------------------------------------------------------------------------------------------
+1. Oscilliatory behavior is mitigated by introducing constant cumulative time penalty, larger number of 
+episodes of training and larger goal reward. 
+2. Boundary violation is mitigated by longer number of steps per episode and larger penalty.
+3. Curriculum learning also fascillitate the learning progress. Learning difficulty is relaxed by expanding
+the goal region in state space, then progressively shrink the goal region.
+
+
+***Evaluations***
+---------------------------------------------------------------------
+There are a few ways to evaluate the results more robustly.
+1. Returns of episodes during training
+2. Variance of episodes during training
+3. A test run visualization to evaluate one instance qualitatively
+4. State sweep of the policy, visualize the action output, only suitable for low dimensional space
+5. Monte Carlo sweep of state space during inference, and count number of success vs failures

@@ -23,6 +23,10 @@ class DoubleIntegrator1D:
             self.x = 5
             self.vx = 0.5
         return self.get_state()
+    
+    def set_state(self, x, vx):
+        self.x = x
+        self.vx = vx
 
     def get_state(self):
         return np.array([self.x, self.vx])  
@@ -40,9 +44,12 @@ class DoubleIntegrator1D:
             done = True
             print("Out of bounds")
 
-        if np.abs(self.x - self.target_x) < self.x_epsilon and np.abs(self.vx) < self.vx_epsilon:
+        if self.goal_reached():
             reward += 1e3
             done = True
-            print("Target reached")
+            print("Goal reached")
 
         return np.array([self.x, self.vx]), reward, done
+    
+    def goal_reached(self):
+        return np.abs(self.x - self.target_x) < self.x_epsilon and np.abs(self.vx) < self.vx_epsilon
