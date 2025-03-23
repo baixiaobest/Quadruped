@@ -28,14 +28,13 @@ def plot_returns(returns_list):
     plt.xlabel('Episode')
     plt.ylabel('Variance')
     plt.title(f'Windowed Variance over Episodes, window={window}')
-    plt.show()
 
 def training():
-    random.seed(14) # this would affect the scenarios at which the agent is trained
-    LOAD = False
+    random.seed(20) # this would affect the scenarios at which the agent is trained
+    LOAD = True
     # Create the environment
     env = DoubleIntegrator1D(
-        delta_t=0.05, target_x=0, x_bound=[-10, 10], v_bound=[-5, 5], x_epsilon=0.5, vx_epsilon=0.2, debug=True)
+        delta_t=0.05, target_x=0, x_bound=[-10, 10], v_bound=[-5, 5], v_penalty=0.1, time_penalty=0.1, x_epsilon=0.5, vx_epsilon=0.2, debug=False)
 
     # Create the policy network
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
@@ -56,6 +55,8 @@ def training():
     torch.save(policy.state_dict(), 'RL/training/models/double_integrator_REINFORCE.pth')
 
     plot_returns(reinforce.get_returns_list())
+    visualize_policy(policy)
+    plt.show()
 
 def inference():
     # Create the environment
@@ -101,11 +102,18 @@ def inference():
 def plot_inference(state_list, action_list):
     x = [s[0] for s in state_list]
     vx = [s[1] for s in state_list]
+
+    plt.subplot(2, 1, 1)
     plt.plot(range(len(x)), x, label='x')
     plt.plot(range(len(vx)), vx, label='vx')
-    plt.plot(range(len(action_list)), action_list, label='action')
     plt.xlabel('Step')
     plt.ylabel('Value')
+
+    plt.subplot(2, 1, 2)
+    plt.plot(range(len(action_list)), action_list, label='action')
+    plt.xlabel('Step')
+    plt.ylabel('Action')
+
     plt.legend()
     plt.title('Inference')
     plt.legend()
@@ -147,5 +155,5 @@ def visualize_policy(policy, x_range=(-10, 10), vx_range=(-5, 5), resolution=50)
     fig.colorbar(surf, shrink=0.5, aspect=5)
 
 if __name__=='__main__':
-    # inference()
-    training()
+    inference()
+    # training()
