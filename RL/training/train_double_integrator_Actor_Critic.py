@@ -4,7 +4,7 @@ import os
 # Add the parent directory (root) to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 import torch
-from RL.ActorCritic import ActorCriticOneStep
+from RL.ActorCritic import ActorCriticOneStep, ActorCriticEligibilityTrace
 from RL.Environments import DoubleIntegrator1D
 from RL.PolicyNetwork import DoubleIntegratorPolicy
 from RL.ValueNetwork import SimpleValuePolicy
@@ -15,7 +15,7 @@ import numpy as np
 from RL.training.common_double_integrator import *
 
 
-def train(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_epsilon=0.1, show=False):
+def train(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_epsilon=0.1, show=False, algorithm="one_step"):
     random.seed(seed)
     # Create the environment
     env = DoubleIntegrator1D(
@@ -48,7 +48,33 @@ def train(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_epsilo
     value_optimizer = torch.optim.Adam(value_net.parameters(), lr=1e-3)
 
     # Create the REINFORCE agent
-    actor_critic = ActorCriticOneStep(env, policy, policy_optimizer, value_func=value_net, value_optimizer=value_optimizer, num_episodes=num_episodes, max_steps=max_steps, gamma=0.99)
+    actor_critic = None
+
+    if algorithm == "one_step":
+        actor_critic = ActorCriticOneStep(
+            env, 
+            policy, 
+            policy_optimizer, 
+            value_func=value_net, 
+            value_optimizer=value_optimizer, 
+            num_episodes=num_episodes, 
+            max_steps=max_steps, 
+            gamma=0.99)
+    
+    elif algorithm == "eligibility_trace":
+        actor_critic = ActorCriticEligibilityTrace(
+            env, 
+            policy, 
+            policy_optimizer, 
+            value_func=value_net, 
+            value_optimizer=value_optimizer, 
+            num_episodes=num_episodes, 
+            max_steps=max_steps, 
+            gamma=0.99,
+            lambda_policy=0.9, 
+            lambda_value=0.01)
+    else:
+        print("Invalid algorithm")
 
     # Train the agent
     actor_critic.train()
@@ -71,9 +97,12 @@ def load_policy(file_name):
 if __name__ == '__main__':
     policy = load_policy("double_integrator_actor_critic")
 
-    inference_sweep(policy, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500)
+    # inference_sweep(policy, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500)
 
     # inference(policy)
 
     # train(load=False, seed=45, num_episodes=200, max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=False)
     # train(load=True, seed=50, num_episodes=200, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True)
+
+    # train(load=False, seed=45, num_episodes=50, max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=True, algorithm="eligibility_trace")
+    # train(load=True, seed=50, num_episodes=50, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True, algorithm="eligibility_trace")
