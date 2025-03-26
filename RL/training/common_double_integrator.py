@@ -85,7 +85,12 @@ def plot_returns(returns_list):
 def inference(policy):
     # Create the environment
     env = DoubleIntegrator1D(
-        delta_t=0.05, target_x=0, x_bound=[-10, 10], v_bound=[-5, 5], x_epsilon=0.1, vx_epsilon=0.1, debug=False)
+        delta_t=0.05, 
+        target_x=0, 
+        x_bound=[-10, 10], 
+        v_bound=[-5, 5], 
+        x_epsilon=0.1, 
+        vx_epsilon=0.1)
     
     state = env.reset()
     rewards = []
@@ -118,7 +123,7 @@ def inference(policy):
     visualize_policy(policy, resolution=100)
     plt.show()
 
-def inference_sweep(policy, x_range=(-5, 5), v_range=(-3, 3), grid_resolution=100, max_steps=100):
+def inference_sweep(policy, seed=0, x_range=(-5, 5), v_range=(-3, 3), grid_resolution=100, max_steps=100, show=True):
     """
     Sweeps the initial state space and evaluates the policy.
     
@@ -128,15 +133,16 @@ def inference_sweep(policy, x_range=(-5, 5), v_range=(-3, 3), grid_resolution=10
         grid_resolution (int): Number of initial states per dimension.
         max_steps (int): Maximum steps to run each episode.
     """
+    torch.manual_seed(seed)
+    target_x = 0
     # Create the environment
     env = DoubleIntegrator1D(
         delta_t=0.05,
-        target_x=0,
+        target_x=target_x,
         x_bound=[-10, 10],
         v_bound=[-5, 5],
         x_epsilon=0.1,
-        vx_epsilon=0.1,
-        debug=False
+        vx_epsilon=0.1
     )
     
     success_count = 0
@@ -145,15 +151,25 @@ def inference_sweep(policy, x_range=(-5, 5), v_range=(-3, 3), grid_resolution=10
     # Generate grid of initial states
     x_vals = np.linspace(x_range[0], x_range[1], grid_resolution)
     v_vals = np.linspace(v_range[0], v_range[1], grid_resolution)
+
+    RMS_error_list = []
+    step_list = []
+    return_list = []
     
     for x0 in x_vals:
         for v0 in v_vals:
             # Reset the environment and override the initial state
             env.set_state(x0, v0)
             state = env.get_state()
+            quadratic_error_avg = 0
 
             # Run the episode for up to max_steps
+            step = 0
+            return_v = 0
             for step in range(max_steps):
+                tracking_error = (state[0] - target_x)**2
+                quadratic_error_avg = 1/(step + 1) * (tracking_error - quadratic_error_avg) + quadratic_error_avg
+
                 state_tensor = torch.tensor(state, dtype=torch.float32)
                 actions_prob = policy.forward(state_tensor)
                 dist = torch.distributions.Categorical(actions_prob)
@@ -161,14 +177,52 @@ def inference_sweep(policy, x_range=(-5, 5), v_range=(-3, 3), grid_resolution=10
                 action = policy.get_action(action_idx).item()
                 
                 state, reward, done = env.step(action)
+
+                return_v += reward
+
                 if done:
                     break
             
+            step_list.append(step)
+            return_list.append(return_v)
             # Query the environment to determine if the goal was reached
             if env.goal_reached():
                 success_count += 1
             else:
                 failure_count += 1
 
+            RMS_error_list.append(np.sqrt(quadratic_error_avg))
+
+    RMS_avg = np.average(np.array(RMS_error_list))
+    return_avg = np.average(np.array(return_list))
+    num_steps_avg = np.average(np.array(step_list))
+
     print("Success count: ", success_count)
     print("Failure count: ", failure_count)
+    print(f"Average RMS error: {RMS_avg}")
+    print(f"Return Average: {return_avg}")
+
+    plt.figure()
+    plt.subplot(2, 2, 1)
+    plt.hist(step_list, 50)
+    plt.xlabel("steps")
+    plt.ylabel("number of runs")
+    plt.axvline(num_steps_avg, color='red', linestyle='dashed', linewidth=2, 
+            label=f'Mean: {num_steps_avg:.2f}')
+
+    plt.subplot(2, 2, 2)
+    plt.hist(return_list, 50)
+    plt.xlabel("return")
+    plt.ylabel("number of runs")
+    plt.axvline(return_avg, color='red', linestyle='dashed', linewidth=2, 
+            label=f'Mean: {return_avg:.2f}')
+
+
+    plt.subplot(2, 2, 3)
+    plt.hist(RMS_error_list, 50)
+    plt.xlabel("RMS")
+    plt.ylabel("number of runs")
+    plt.axvline(RMS_avg, color='red', linestyle='dashed', linewidth=2, 
+            label=f'Mean: {RMS_avg:.2f}')
+    if show:
+        plt.show()

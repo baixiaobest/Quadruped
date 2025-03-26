@@ -14,9 +14,13 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from RL.training.common_double_integrator import *
 
-
-def train(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_epsilon=0.1, show=False, algorithm="one_step"):
+def train(load, seed, file_name, 
+          num_episodes=1000, max_steps=200, 
+          x_epsilon=0.5, vx_epsilon=0.1, 
+          show=False, algorithm="one_step"):
+    
     random.seed(seed)
+    torch.manual_seed(seed)
     # Create the environment
     env = DoubleIntegrator1D(
         delta_t=0.05, 
@@ -30,14 +34,13 @@ def train(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_epsilo
         action_change_panelty=0.5,
         action_smooth=0.7, 
         x_epsilon=x_epsilon, 
-        vx_epsilon=vx_epsilon, 
-        debug=False)
+        vx_epsilon=vx_epsilon)
 
     # Create the policy network
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=100, hidden_dims=[16, 64], action_range=[-5, 5])
 
     if load:
-        policy.load_state_dict(torch.load('RL/training/models/double_integrator_actor_critic.pth'))
+        policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
 
     # Create optimizer
     policy_optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
@@ -72,7 +75,9 @@ def train(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_epsilo
             max_steps=max_steps, 
             gamma=0.99,
             lambda_policy=0.9, 
-            lambda_value=0.01)
+            lambda_value=0.9,
+            policy_trace_max=1,
+            value_trace_max=1)
     else:
         print("Invalid algorithm")
 
@@ -80,7 +85,7 @@ def train(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_epsilo
     actor_critic.train()
 
     # Save the policy
-    torch.save(policy.state_dict(), 'RL/training/models/double_integrator_actor_critic.pth')
+    torch.save(policy.state_dict(), f'RL/training/models/{file_name}.pth')
 
     if show:
         plot_returns(actor_critic.get_returns_list())
@@ -95,14 +100,16 @@ def load_policy(file_name):
     return policy
 
 if __name__ == '__main__':
-    policy = load_policy("double_integrator_actor_critic")
+    policy1 = load_policy("double_integrator_actor_critic_trace1")
+    policy2 = load_policy("double_integrator_actor_critic_trace")
 
-    # inference_sweep(policy, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500)
+    # inference_sweep(policy1, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, show=False)
+    # inference_sweep(policy2, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, show=True)
 
-    # inference(policy)
+    inference(policy2)
 
-    # train(load=False, seed=45, num_episodes=200, max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=False)
-    # train(load=True, seed=50, num_episodes=200, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True)
+    # train(load=False, seed=45, file_name='double_integrator_actor_critic', num_episodes=500, max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=False)
+    # train(load=True, seed=50, file_name='double_integrator_actor_critic', num_episodes=500, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True)
 
-    # train(load=False, seed=45, num_episodes=50, max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=True, algorithm="eligibility_trace")
-    # train(load=True, seed=50, num_episodes=50, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True, algorithm="eligibility_trace")
+    # train(load=False, seed=45, file_name='double_integrator_actor_critic_trace', num_episodes=500, max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=False, algorithm="eligibility_trace")
+    # train(load=True, seed=50, file_name='double_integrator_actor_critic_trace', num_episodes=500, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True, algorithm="eligibility_trace")

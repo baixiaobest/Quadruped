@@ -2,7 +2,19 @@ import random
 import numpy as np
 
 class DoubleIntegrator1D:
-    def __init__(self, delta_t=0.05, target_x=0, goal_reward=1e2, x_bound=[-10, 10], v_bound=[-5, 5], v_penalty=0.1, time_penalty=0.01, action_penalty=0.1, action_change_panelty=0.1, action_smooth=0.9, x_epsilon=0.1, vx_epsilon=0.05, debug=False):
+    def __init__(self, 
+                 delta_t=0.05, 
+                 target_x=0, 
+                 goal_reward=1e2, 
+                 x_bound=[-10, 10], 
+                 v_bound=[-5, 5], 
+                 v_penalty=0.1, 
+                 time_penalty=0.01, 
+                 action_penalty=0.1, 
+                 action_change_panelty=0.1, 
+                 action_smooth=0.9, 
+                 x_epsilon=0.1, 
+                 vx_epsilon=0.05):
         self.delta_t = delta_t
         self.x = 0
         self.vx = 0
@@ -17,17 +29,13 @@ class DoubleIntegrator1D:
         self.v_bound = v_bound
         self.x_epsilon = x_epsilon
         self.vx_epsilon = vx_epsilon
-        self.debug = debug
         self.prev_action = 0
 
     def reset(self):
-        if not self.debug:
-            self.x = random.uniform(self.x_bound[0]/2, self.x_bound[1]/2)
-            self.vx = random.uniform(self.v_bound[0]/2, self.v_bound[1]/2) 
-        else:
-            self.x = 5
-            self.vx = 0.5
+        self.x = random.uniform(self.x_bound[0]/2, self.x_bound[1]/2)
+        self.vx = random.uniform(self.v_bound[0]/2, self.v_bound[1]/2) 
         self.prev_action = 0
+        
         return self.get_state()
     
     def set_state(self, x, vx, action=0):

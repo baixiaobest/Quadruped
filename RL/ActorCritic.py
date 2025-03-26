@@ -1,4 +1,10 @@
+import sys
+import os
+# Add the parent directory (root) to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 import torch
+from RL.GradientOperators import GradientOperator as GO
 
 class ActorCriticOneStep:
     def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, num_episodes=1000, max_steps=100, gamma=0.99):
@@ -73,7 +79,8 @@ class ActorCriticOneStep:
 
 class ActorCriticEligibilityTrace(ActorCriticOneStep):
     def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, 
-                 num_episodes=1000, max_steps=100, gamma=0.99, lambda_policy=0.9, lambda_value=0.9):
+                 num_episodes=1000, max_steps=100, gamma=0.99, lambda_policy=0.9, lambda_value=0.9,
+                 policy_trace_max=1, value_trace_max=1):
         self.env = env
         self.policy = policy
         self.value_func = value_func
@@ -84,6 +91,8 @@ class ActorCriticEligibilityTrace(ActorCriticOneStep):
         self.gamma = gamma
         self.lambda_policy = lambda_policy
         self.lambda_value = lambda_value
+        self.policy_trace_max = policy_trace_max
+        self.value_trace_max = value_trace_max
 
         self.return_list = []
 
@@ -118,52 +127,50 @@ class ActorCriticEligibilityTrace(ActorCriticOneStep):
                 td_error = reward + self.gamma * self.value_func.forward(next_state).detach() - self.value_func.forward(state).detach() * (1-done)
 
                 action_log_grad = torch.autograd.grad(action_log_prob, self.policy.parameters())
-                threshold1 = 20
-                if _grad_norm(action_log_grad) > threshold1:
-                    action_log_grad = _grad_const_mul(_normalize_grad(action_log_grad), threshold1)
 
                 if policy_trace is None:
-                    policy_trace = _grad_const_mul(action_log_grad, discount)
+                    policy_trace = GO.grad_const_mul(action_log_grad, discount)
                 else:
-                    policy_trace = _grad_add(_grad_const_mul(policy_trace, self.gamma * self.lambda_value), _grad_const_mul(action_log_grad, discount))
+                    policy_trace = GO.grad_add(GO.grad_const_mul(policy_trace, self.gamma * self.lambda_value), GO.grad_const_mul(action_log_grad, discount))
                 
-                policy_grad = _grad_const_mul(policy_trace, -td_error)
+                policy_trace = GO.clamp_grad(policy_trace, -self.policy_trace_max, self.policy_trace_max)
+                policy_grad = GO.grad_const_mul(policy_trace, -td_error)
 
                 self.policy_optimizer.zero_grad()
-                _set_grad(self.policy.parameters(), policy_grad)
+                GO.set_grad(self.policy.parameters(), policy_grad)
                 self.policy_optimizer.step()
 
-                # print(f"action_log: {norm(action_log_grad):.3f}")
-                # print(f"trace: {norm(policy_trace):.3f}")
-                # print(f"grad: {norm(policy_grad):.3f}")
+                # print(f"action_log: {GO.grad_norm(action_log_grad):.3f}")
+                # print(f"trace: {GO.grad_norm(policy_trace):.3f}")
+                # print(f"grad: {GO.grad_norm(policy_grad):.3f}")
                 # print(f"td error: {td_error.item():.3f}\n")
 
-                # if norm(policy_trace).item() > 10:
+                # if GO.grad_norm(policy_trace).item() > 10:
                 #     print("---")
 
                 # # Value forward pass and gradient computation
                 curr_value_grad = torch.autograd.grad(self.value_func.forward(state), self.value_func.parameters())
                 threshold2=1
-                if _grad_norm(curr_value_grad) > threshold2:
-                    curr_value_grad = _grad_const_mul(_normalize_grad(curr_value_grad), threshold2) 
+                curr_value_grad = GO.clamp_grad(curr_value_grad, -threshold2, threshold2)
 
                 if value_trace is None:
                     value_trace = curr_value_grad
                 else:
-                    value_trace = _grad_add(_grad_const_mul(value_trace, self.gamma * self.lambda_value), curr_value_grad)
+                    value_trace = GO.grad_add(GO.grad_const_mul(value_trace, self.gamma * self.lambda_value), curr_value_grad)
                 
-                value_grad = _grad_const_mul(value_trace, -td_error)
+                value_trace = GO.clamp_grad(value_trace, -self.value_trace_max, self.value_trace_max)
+                value_grad = GO.grad_const_mul(value_trace, -td_error)
 
                 self.policy_optimizer.zero_grad()
-                _set_grad(self.value_func.parameters(), value_grad)
+                GO.set_grad(self.value_func.parameters(), value_grad)
                 self.value_optimizer.step()
 
-                # print(f"value grad: {norm(curr_value_grad):.3f}")
-                # print(f"trace: {norm(value_trace):.3f}")
-                # print(f"grad: {norm(value_grad):.3f}")
+                # print(f"value grad: {GO.grad_norm(curr_value_grad):.3f}")
+                # print(f"trace: {GO.grad_norm(value_trace):.3f}")
+                # print(f"grad: {GO.grad_norm(value_grad):.3f}")
                 # print(f"td error: {td_error.item():.3f}\n")
 
-                # if norm(value_trace).item() > 10:
+                # if GO.grad_norm(value_trace).item() > 10:
                 #     print("---")
 
                 if done:
@@ -184,22 +191,3 @@ class ActorCriticEligibilityTrace(ActorCriticOneStep):
     def get_returns_list(self):
         return self.return_list
     
-def _normalize_grad(grad):
-    n = _grad_norm(grad)
-    return tuple(g / (n + 1e-5) for g in grad)
-
-def _grad_norm(grad):
-    flattened_tensors = [t.flatten() for t in grad]
-    combined = torch.cat(flattened_tensors) 
-    return torch.norm(combined)
-
-def _set_grad(parameters, grad):
-    # Assign computed gradients to policy parameters
-    for param, grad in zip(parameters, grad):
-        param.grad = grad  # Manually set gradients
-    
-def _grad_const_mul(grad, scalar):
-    return tuple(scalar * t for t in grad)
-
-def _grad_add(grad1, grad2):
-    return tuple(a + b for a, b in zip(grad1, grad2))
