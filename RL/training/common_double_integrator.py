@@ -82,15 +82,24 @@ def plot_returns(returns_list):
     plt.ylabel('Variance')
     plt.title(f'Windowed Variance over Episodes, window={window}')
 
-def inference(policy):
+def inference(policy, noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 0}):
     # Create the environment
     env = DoubleIntegrator1D(
         delta_t=0.05, 
         target_x=0, 
+        goal_reward=1e2,
         x_bound=[-10, 10], 
         v_bound=[-5, 5], 
+        v_penalty=0.1, 
+        time_penalty=0.1, 
+        action_penalty=0.5, 
+        action_change_panelty=0.5,
+        action_smooth=0.7, 
         x_epsilon=0.1, 
-        vx_epsilon=0.1)
+        vx_epsilon=0.1,
+        noise=noise,
+        bias=bias
+    )
     
     state = env.reset()
     rewards = []
@@ -123,7 +132,9 @@ def inference(policy):
     visualize_policy(policy, resolution=100)
     plt.show()
 
-def inference_sweep(policy, seed=0, x_range=(-5, 5), v_range=(-3, 3), grid_resolution=100, max_steps=100, show=True):
+def inference_sweep(policy, seed=0, x_range=(-5, 5), v_range=(-3, 3), grid_resolution=100, 
+                    max_steps=100, noise={'x': 0, 'vx': 0, 'action': 0}, 
+                    bias={'x': 0, 'vx': 0, 'action': 0}, show=True):
     """
     Sweeps the initial state space and evaluates the policy.
     
@@ -137,12 +148,20 @@ def inference_sweep(policy, seed=0, x_range=(-5, 5), v_range=(-3, 3), grid_resol
     target_x = 0
     # Create the environment
     env = DoubleIntegrator1D(
-        delta_t=0.05,
-        target_x=target_x,
-        x_bound=[-10, 10],
-        v_bound=[-5, 5],
-        x_epsilon=0.1,
-        vx_epsilon=0.1
+        delta_t=0.05, 
+        target_x=0, 
+        goal_reward=1e2,
+        x_bound=[-10, 10], 
+        v_bound=[-5, 5], 
+        v_penalty=0.1, 
+        time_penalty=0.1, 
+        action_penalty=0.5, 
+        action_change_panelty=0.5,
+        action_smooth=0.7, 
+        x_epsilon=0.1, 
+        vx_epsilon=0.1,
+        noise=noise,
+        bias=bias
     )
     
     success_count = 0

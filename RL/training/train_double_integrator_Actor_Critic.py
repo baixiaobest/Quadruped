@@ -101,12 +101,14 @@ def load_policy(file_name):
 
 if __name__ == '__main__':
     policy1 = load_policy("double_integrator_actor_critic_trace1")
-    policy2 = load_policy("double_integrator_actor_critic_trace")
+    policy2 = load_policy("double_integrator_actor_critic_trace1")
 
-    # inference_sweep(policy1, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, show=False)
-    # inference_sweep(policy2, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, show=True)
+    inference_sweep(policy1, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, 
+                    noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 0}, show=False)
+    inference_sweep(policy2, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, 
+                    noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 3}, show=True)
 
-    inference(policy2)
+    # inference(policy2, noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 3})
 
     # train(load=False, seed=45, file_name='double_integrator_actor_critic', num_episodes=500, max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=False)
     # train(load=True, seed=50, file_name='double_integrator_actor_critic', num_episodes=500, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True)

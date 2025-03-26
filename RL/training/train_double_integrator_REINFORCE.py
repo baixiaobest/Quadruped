@@ -29,8 +29,7 @@ def training(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_eps
         action_change_panelty=0.5,
         action_smooth=0.7, 
         x_epsilon=x_epsilon, 
-        vx_epsilon=vx_epsilon, 
-        debug=False)
+        vx_epsilon=vx_epsilon)
 
     # Create the policy network
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
@@ -70,8 +69,7 @@ def train_baseline(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, 
         action_change_panelty=0.5,
         action_smooth=0.7, 
         x_epsilon=x_epsilon, 
-        vx_epsilon=vx_epsilon, 
-        debug=False)
+        vx_epsilon=vx_epsilon)
     # Create the policy network
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
 
@@ -111,7 +109,7 @@ if __name__=='__main__':
 
     ###No Baseline###
     # policy = load_policy("double_integrator_REINFORCE")
-    # inference_sweep(policy, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=200)
+    # inference_sweep(policy, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=200)
     
     # inference(policy)
 

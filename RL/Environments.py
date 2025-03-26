@@ -14,7 +14,10 @@ class DoubleIntegrator1D:
                  action_change_panelty=0.1, 
                  action_smooth=0.9, 
                  x_epsilon=0.1, 
-                 vx_epsilon=0.05):
+                 vx_epsilon=0.05,
+                 noise={'x': 0, 'vx': 0, 'action': 0},
+                 bias={'x':0, 'vx': 0, 'action': 0},
+                 debug=False):
         self.delta_t = delta_t
         self.x = 0
         self.vx = 0
@@ -29,11 +32,19 @@ class DoubleIntegrator1D:
         self.v_bound = v_bound
         self.x_epsilon = x_epsilon
         self.vx_epsilon = vx_epsilon
+        self.noise = noise
+        self.bias = bias
+        self.debug = debug
         self.prev_action = 0
 
     def reset(self):
-        self.x = random.uniform(self.x_bound[0]/2, self.x_bound[1]/2)
-        self.vx = random.uniform(self.v_bound[0]/2, self.v_bound[1]/2) 
+        if self.debug:
+            self.x = 5
+            self.vx = 0.5
+        else:
+            self.x = random.uniform(self.x_bound[0]/2, self.x_bound[1]/2)
+            self.vx = random.uniform(self.v_bound[0]/2, self.v_bound[1]/2) 
+
         self.prev_action = 0
         
         return self.get_state()
@@ -44,13 +55,14 @@ class DoubleIntegrator1D:
         self.prev_action = action
 
     def get_state(self):
-        # Action is part of state because we may need to smooth out the action over time.
-        return np.array([self.x, self.vx])  
+        return np.array([np.random.normal(self.x, self.noise['x'] + self.bias['x']), 
+                         np.random.normal(self.vx, self.noise['vx'] + self.bias['vx'])])  
     
     def get_action(self):
         return self.prev_action
 
     def step(self, action):
+        action = np.random.normal(action, self.noise['action']) + self.bias['action']
         self.prev_action = (1-self.action_smooth) * self.prev_action + self.action_smooth * action
         self.x += self.vx * self.delta_t
         self.vx += self.prev_action * self.delta_t
