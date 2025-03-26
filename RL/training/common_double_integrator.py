@@ -51,6 +51,7 @@ def plot_inference(state_list, action_list):
     vx = [s[1] for s in state_list]
 
     plt.subplot(2, 1, 1)
+    plt.title('Inference')
     plt.plot(range(len(x)), x, label='x')
     plt.plot(range(len(vx)), vx, label='vx')
     plt.xlabel('Step')
@@ -60,9 +61,6 @@ def plot_inference(state_list, action_list):
     plt.plot(range(len(action_list)), action_list, label='action')
     plt.xlabel('Step')
     plt.ylabel('Action')
-
-    plt.legend()
-    plt.title('Inference')
     plt.legend()
 
 def plot_returns(returns_list):
@@ -236,12 +234,21 @@ def inference_sweep(policy, seed=0, x_range=(-5, 5), v_range=(-3, 3), grid_resol
     plt.axvline(return_avg, color='red', linestyle='dashed', linewidth=2, 
             label=f'Mean: {return_avg:.2f}')
 
-
     plt.subplot(2, 2, 3)
     plt.hist(RMS_error_list, 50)
     plt.xlabel("RMS")
     plt.ylabel("number of runs")
     plt.axvline(RMS_avg, color='red', linestyle='dashed', linewidth=2, 
             label=f'Mean: {RMS_avg:.2f}')
+    
+    plt.subplot(2, 2, 4)
+    plt.pie([success_count, failure_count], 
+            labels=None,
+            explode=(0.1, 0),
+            colors=['green', 'red'],
+            autopct='%1.1f%%',
+            shadow=True)
+    plt.legend(['Success', 'Failure'], loc="center left", bbox_to_anchor=(1, 0.5))
+
     if show:
         plt.show()

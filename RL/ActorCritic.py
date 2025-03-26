@@ -103,6 +103,7 @@ class ActorCriticEligibilityTrace(ActorCriticOneStep):
 
         for episode in range(self.num_episodes):
             self.env.reset()
+            self.policy.reset() # Reset the internal state of the policy
             state = torch.tensor(self.env.get_state(), dtype=torch.float32)
             discount = 1
             rewards = []

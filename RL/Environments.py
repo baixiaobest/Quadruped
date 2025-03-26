@@ -14,9 +14,10 @@ class DoubleIntegrator1D:
                  action_change_panelty=0.1, 
                  action_smooth=0.9, 
                  x_epsilon=0.1, 
-                 vx_epsilon=0.05,
+                 vx_epsilon=0.1,
                  noise={'x': 0, 'vx': 0, 'action': 0},
                  bias={'x':0, 'vx': 0, 'action': 0},
+                 random_bias=None,
                  debug=False):
         self.delta_t = delta_t
         self.x = 0
@@ -34,6 +35,7 @@ class DoubleIntegrator1D:
         self.vx_epsilon = vx_epsilon
         self.noise = noise
         self.bias = bias
+        self.random_bias = random_bias
         self.debug = debug
         self.prev_action = 0
 
@@ -44,6 +46,13 @@ class DoubleIntegrator1D:
         else:
             self.x = random.uniform(self.x_bound[0]/2, self.x_bound[1]/2)
             self.vx = random.uniform(self.v_bound[0]/2, self.v_bound[1]/2) 
+
+        if self.random_bias:
+            self.bias = {
+                'x': np.random.uniform(-self.random_bias['x'], self.random_bias['x']), 
+                'vx': np.random.uniform(-self.random_bias['vx'], self.random_bias['vx']), 
+                'action': np.random.uniform(-self.random_bias['action'], self.random_bias['action']), 
+            }
 
         self.prev_action = 0
         

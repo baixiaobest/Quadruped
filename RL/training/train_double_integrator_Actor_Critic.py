@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 import torch
 from RL.ActorCritic import ActorCriticOneStep, ActorCriticEligibilityTrace
 from RL.Environments import DoubleIntegrator1D
-from RL.PolicyNetwork import DoubleIntegratorPolicy
+from RL.PolicyNetwork import DoubleIntegratorPolicy, DoubleIntegratorPolicyLSTM
 from RL.ValueNetwork import SimpleValuePolicy
 import random
 from matplotlib import pyplot as plt
@@ -17,7 +17,7 @@ from RL.training.common_double_integrator import *
 def train(load, seed, file_name, 
           num_episodes=1000, max_steps=200, 
           x_epsilon=0.5, vx_epsilon=0.1, 
-          show=False, algorithm="one_step"):
+          show=False, algorithm="one_step", random_action_bias=0, policy_type='simple'):
     
     random.seed(seed)
     torch.manual_seed(seed)
@@ -34,10 +34,14 @@ def train(load, seed, file_name,
         action_change_panelty=0.5,
         action_smooth=0.7, 
         x_epsilon=x_epsilon, 
-        vx_epsilon=vx_epsilon)
+        vx_epsilon=vx_epsilon,
+        random_bias={'x': 0, 'vx': 0, 'action': random_action_bias})
 
     # Create the policy network
+    
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=100, hidden_dims=[16, 64], action_range=[-5, 5])
+    if policy_type == 'lstm':
+        policy = DoubleIntegratorPolicyLSTM(state_dim=2, action_dim=100, hidden_dims=[16, 64], action_range=[-5, 5])
 
     if load:
         policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
@@ -92,19 +96,21 @@ def train(load, seed, file_name,
         visualize_policy(policy)
         plt.show()
 
-def load_policy(file_name):
+def load_policy(file_name, policy_type='simple'):
     # Create the policy network
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=100, hidden_dims=[16, 64], action_range=[-5, 5])
+    if policy_type == 'lstm':
+        policy = DoubleIntegratorPolicyLSTM(state_dim=2, action_dim=100, hidden_dims=[16, 64], action_range=[-5, 5])
     policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
     policy.eval()
     return policy
 
 if __name__ == '__main__':
-    policy1 = load_policy("double_integrator_actor_critic_trace1")
-    policy2 = load_policy("double_integrator_actor_critic_trace1")
+    policy1 = load_policy("double_integrator_actor_critic_trace1", policy_type='simple')
+    policy2 = load_policy("double_integrator_actor_critic_trace_lstm", policy_type='lstm')
 
     inference_sweep(policy1, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, 
-                    noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 0}, show=False)
+                    noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 3}, show=False)
     inference_sweep(policy2, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, 
                     noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 3}, show=True)
 
@@ -113,5 +119,9 @@ if __name__ == '__main__':
     # train(load=False, seed=45, file_name='double_integrator_actor_critic', num_episodes=500, max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=False)
     # train(load=True, seed=50, file_name='double_integrator_actor_critic', num_episodes=500, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True)
 
-    # train(load=False, seed=45, file_name='double_integrator_actor_critic_trace', num_episodes=500, max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=False, algorithm="eligibility_trace")
-    # train(load=True, seed=50, file_name='double_integrator_actor_critic_trace', num_episodes=500, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True, algorithm="eligibility_trace")
+    # train(load=False, seed=45, file_name='double_integrator_actor_critic_trace', num_episodes=500, 
+    #       max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=True, algorithm="eligibility_trace", 
+    #       random_action_bias=2)
+    # train(load=True, seed=50, file_name='double_integrator_actor_critic_trace', num_episodes=500, 
+    #     max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True, algorithm="eligibility_trace", 
+    #     random_action_bias=4)
