@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 import torch
 from matplotlib import pyplot as plt
 import numpy as np
-from RL.PolicyNetwork import DoubleIntegratorPolicy
+from RL.PolicyNetwork import DoubleIntegratorPolicy, ActionType
 from RL.Environments import DoubleIntegrator1D
 
 def visualize_policy(policy, x_range=(-10, 10), vx_range=(-5, 5), resolution=50):
@@ -25,6 +25,7 @@ def visualize_policy(policy, x_range=(-10, 10), vx_range=(-5, 5), resolution=50)
     vx_vals = np.linspace(vx_range[0], vx_range[1], resolution)
     X, VX = np.meshgrid(x_vals, vx_vals)
     A = np.zeros_like(X)
+    STD = np.zeros_like(X)
 
     # Evaluate policy for each (x, vx)
     for i in range(resolution):
@@ -33,8 +34,14 @@ def visualize_policy(policy, x_range=(-10, 10), vx_range=(-5, 5), resolution=50)
             state_tensor = torch.tensor(state, dtype=torch.float32)
             with torch.no_grad():
                 actions = policy(state_tensor)
-                action = torch.argmax(actions)
-                A[i, j] = action.item()
+                if policy.get_action_type() == ActionType.DISTRIBUTION:
+                    action = torch.argmax(actions)
+                    A[i, j] = action.item()
+                elif policy.get_action_type() == ActionType.GAUSSIAN:
+                    action = actions[0]
+                    std = actions[1]
+                    A[i, j] = action.item()
+                    STD[i, j] = std.item()
     
     # Plotting the 3D surface
     fig = plt.figure()
@@ -45,6 +52,16 @@ def visualize_policy(policy, x_range=(-10, 10), vx_range=(-5, 5), resolution=50)
     ax.set_zlabel('Action')
     ax.set_title('Policy Visualization')
     fig.colorbar(surf, shrink=0.5, aspect=5)
+
+    if policy.get_action_type() == ActionType.GAUSSIAN:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        surf = ax.plot_surface(X, VX, STD, cmap='viridis', edgecolor='none')
+        ax.set_xlabel('Position (x)')
+        ax.set_ylabel('Velocity (v_x)')
+        ax.set_zlabel('Standard Deviation')
+        ax.set_title('Standard Deviation Visualization')
+        fig.colorbar(surf, shrink=0.5, aspect=5)
 
 def plot_inference(state_list, action_list):
     x = [s[0] for s in state_list]
@@ -99,7 +116,7 @@ def inference(policy, noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 
         bias=bias
     )
     
-    state = env.reset()
+    state, _ = env.reset()
     rewards = []
     state_list = []
     action_list = []
@@ -107,21 +124,32 @@ def inference(policy, noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 
     with torch.no_grad():
         for step in range(10000):
             state_list.append(state)
-
             state_t = torch.tensor(state, dtype=torch.float32)
-            actions_prob = policy.forward(state_t)
-            dist = torch.distributions.Categorical(actions_prob)
 
-            action_idx = dist.sample()
+            action = None
+            if policy.get_action_type() == ActionType.DISTRIBUTION:
+                actions_prob = policy.forward(state_t)
+                dist = torch.distributions.Categorical(actions_prob)
+                action_idx = dist.sample()
+                action = policy.get_action(action_idx).item()
+            
+            elif policy.get_action_type() == ActionType.GAUSSIAN:
+                mean, std = policy.forward(state_t)
+                action_dist = torch.distributions.Normal(mean, std)
+                action = action_dist.rsample()
+                action = action.detach().numpy()
 
-            next_state, reward, done = env.step(policy.get_action(action_idx).item())
+            next_state, reward, terminated, truncated, info = env.step(action)
+
+            if info:
+                print(info)
 
             rewards.append(reward)
 
             state = next_state
             action_list.append(env.get_action())
 
-            if done:
+            if terminated or truncated:
                 print("done")
                 break
 
@@ -186,29 +214,42 @@ def inference_sweep(policy, seed=0, x_range=(-5, 5), v_range=(-3, 3), grid_resol
             for step in range(max_steps):
                 tracking_error = (state[0] - target_x)**2
                 quadratic_error_avg = 1/(step + 1) * (tracking_error - quadratic_error_avg) + quadratic_error_avg
-
-                state_tensor = torch.tensor(state, dtype=torch.float32)
-                actions_prob = policy.forward(state_tensor)
-                dist = torch.distributions.Categorical(actions_prob)
-                action_idx = dist.sample()
-                action = policy.get_action(action_idx).item()
                 
-                state, reward, done = env.step(action)
+                action = None
+                state_t = torch.tensor(state, dtype=torch.float32)
+                if policy.get_action_type() == ActionType.DISTRIBUTION:
+                    actions_prob = policy.forward(state_t)
+                    dist = torch.distributions.Categorical(actions_prob)
+                    action_idx = dist.sample()
+
+                    # Map distribution to [-1, 1]
+                    delta_action = 2 / policy.get_action_dim()
+                    action = -1 + delta_action * action_idx.item() + delta_action / 2
+                
+                elif policy.get_action_type() == ActionType.GAUSSIAN:
+                    mean, std = policy.forward(state_t)
+                    action_dist = torch.distributions.Normal(mean, std)
+                    action = action_dist.sample()
+                    action = action.detach().numpy()
+
+                state, reward, terminated, truncated, info = env.step(action)
+
+                if info:
+                    print(info)
 
                 return_v += reward
 
-                if done:
+                if terminated or truncated:
                     break
             
             step_list.append(step)
             return_list.append(return_v)
+            RMS_error_list.append(np.sqrt(quadratic_error_avg))
             # Query the environment to determine if the goal was reached
             if env.goal_reached():
                 success_count += 1
             else:
                 failure_count += 1
-
-            RMS_error_list.append(np.sqrt(quadratic_error_avg))
 
     RMS_avg = np.average(np.array(RMS_error_list))
     return_avg = np.average(np.array(return_list))

@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 import torch
 from RL.GradientOperators import GradientOperator as GO
+from RL.PolicyNetwork import ActionType
 
 class ActorCriticOneStep:
     def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, num_episodes=1000, max_steps=100, gamma=0.99):
@@ -23,21 +24,39 @@ class ActorCriticOneStep:
         self.return_list = []
 
         for episode in range(self.num_episodes):
-            self.env.reset()
-            state = torch.tensor(self.env.get_state(), dtype=torch.float32)
+            state, _ = self.env.reset()
+            state = torch.tensor(state, dtype=torch.float32)
             discount = 1
             rewards = []
 
             for step in range(self.max_steps):
-                actions_prob = self.policy.forward(state)
-                dist = torch.distributions.Categorical(actions_prob)
+                action_log_prob = torch.tensor(0, dtype=torch.float32, requires_grad=True)
+                action = None
+                if self.policy.get_action_type() == ActionType.DISTRIBUTION:
+                    actions_prob = self.policy.forward(state.detach())
+                    dist = torch.distributions.Categorical(actions_prob)
+                    action_idx = dist.sample()
+                    action_log_prob = dist.log_prob(action_idx)
 
-                action_idx = dist.sample()
+                    # Map distribution to [-1, 1]
+                    delta_action = 2 / self.policy.get_action_dim()
+                    action = -1 + delta_action * action_idx.item() + delta_action / 2
                 
-                action_log_prob = dist.log_prob(action_idx)
+                elif self.policy.get_action_type() == ActionType.GAUSSIAN:
+                    mean, std = self.policy.forward(state.detach())
+                    # if step == 0:
+                    #     print(f"mean: {mean}")
+                    #     print(f"std: {std}\n")
+                    action_dist = torch.distributions.Normal(mean, std)
+                    action = action_dist.sample()
+                    action_log_prob = action_dist.log_prob(action).sum(dim=-1)
+                    action = action.detach().numpy()
 
-                next_state, reward, done = self.env.step(self.policy.get_action(action_idx).item())
+                next_state, reward, terminated, truncated, info = self.env.step(action)
                 next_state = torch.tensor(next_state, dtype=torch.float32)
+
+                if info:
+                    print(info)
 
                 rewards.append(reward)
 
@@ -57,7 +76,7 @@ class ActorCriticOneStep:
                 value_loss.backward()
                 self.value_optimizer.step()
 
-                if done:
+                if terminated or truncated:
                     break
 
                 state = next_state
@@ -102,9 +121,9 @@ class ActorCriticEligibilityTrace(ActorCriticOneStep):
         torch.autograd.set_detect_anomaly(True)
 
         for episode in range(self.num_episodes):
-            self.env.reset()
             self.policy.reset() # Reset the internal state of the policy
-            state = torch.tensor(self.env.get_state(), dtype=torch.float32)
+            state, _ = self.env.reset()
+            state = torch.tensor(state, dtype=torch.float32)
             discount = 1
             rewards = []
 
@@ -112,17 +131,37 @@ class ActorCriticEligibilityTrace(ActorCriticOneStep):
             value_trace = None
 
             for step in range(self.max_steps):
-                actions_prob = self.policy.forward(state.detach())
-                dist = torch.distributions.Categorical(actions_prob)
+                action_log_prob = torch.tensor(0, dtype=torch.float32, requires_grad=True)
+                action = None
+                if self.policy.get_action_type() == ActionType.DISTRIBUTION:
+                    actions_prob = self.policy.forward(state.detach())
+                    dist = torch.distributions.Categorical(actions_prob)
+                    action_idx = dist.sample()
+                    action_log_prob = dist.log_prob(action_idx)
 
-                action_idx = dist.sample()
+                    # Map distribution to [-1, 1]
+                    delta_action = 2 / self.policy.get_action_dim()
+                    action = -1 + delta_action * action_idx.item() + delta_action / 2
                 
-                action_log_prob = dist.log_prob(action_idx)
+                elif self.policy.get_action_type() == ActionType.GAUSSIAN:
+                    mean, std = self.policy.forward(state.detach())
+                    # if step == 0:
+                    #     print(f"mean: {mean}")
+                    #     print(f"std: {std}\n")
+                    action_dist = torch.distributions.Normal(mean, std)
+                    action = action_dist.sample()
+                    action_log_prob = action_dist.log_prob(action).sum(dim=-1)
+                    action = action.detach().numpy()
 
-                next_state, reward, done = self.env.step(self.policy.get_action(action_idx).item())
+                next_state, reward, terminated, truncated, info = self.env.step(action)
                 next_state = torch.tensor(next_state, dtype=torch.float32)
 
+                if info:
+                    print(info)
+
                 rewards.append(reward)
+
+                done = terminated or truncated
 
                 # Policy forward pass and gradient computation
                 td_error = reward + self.gamma * self.value_func.forward(next_state).detach() - self.value_func.forward(state).detach() * (1-done)
@@ -174,7 +213,7 @@ class ActorCriticEligibilityTrace(ActorCriticOneStep):
                 # if GO.grad_norm(value_trace).item() > 10:
                 #     print("---")
 
-                if done:
+                if terminated or truncated:
                     break
 
                 state = next_state
