@@ -86,9 +86,11 @@ class DoubleIntegratorPolicyLSTM(nn.Module):
     def get_action_type(self):
         return ActionType.DISTRIBUTION
 
-class GaussianStateDependentPolicy(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dims):
-        super(GaussianStateDependentPolicy, self).__init__()
+class GaussianPolicy(nn.Module):
+    def __init__(self, state_dim, action_dim, hidden_dims, 
+                 std_init=0.2, std_min=1e-5, std_max=0.6):
+        
+        super(GaussianPolicy, self).__init__()
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.hidden_dims = hidden_dims
@@ -100,9 +102,9 @@ class GaussianStateDependentPolicy(nn.Module):
 
         self.mean_head = nn.Linear(hidden_dims[-1], action_dim)
 
-        std_init = 0.2
-        std_min = 1e-5
-        std_max = 0.6
+        self.std_init = std_init
+        self.std_min = std_min
+        self.std_max = std_max
         self.log_std_init = np.log(std_init)
         self.log_std_min = np.log(std_min)
         self.log_std_max = np.log(std_max)
@@ -130,7 +132,8 @@ class GaussianStateDependentPolicy(nn.Module):
         pass
 
 class GaussianStateDependentPolicy(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dims, std_hidden_dim=16):
+    def __init__(self, state_dim, action_dim, hidden_dims, std_hidden_dim=16,
+                 std_init=0.2, std_min=1e-5, std_max=0.6):
         super(GaussianStateDependentPolicy, self).__init__()
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -143,9 +146,9 @@ class GaussianStateDependentPolicy(nn.Module):
 
         self.mean_head = nn.Linear(hidden_dims[-1], action_dim)
 
-        std_init = 0.2
-        std_min = 1e-5
-        std_max = 0.6
+        self.std_init = std_init
+        self.std_min = std_min
+        self.std_max = std_max
         self.log_std_init = np.log(std_init)
         self.log_std_min = np.log(std_min)
         self.log_std_max = np.log(std_max)
