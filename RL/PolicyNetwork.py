@@ -7,7 +7,18 @@ class ActionType(Enum):
     DISTRIBUTION=1,
     GAUSSIAN=2
 
-class DoubleIntegratorPolicy(nn.Module):
+class Policy(nn.Module):
+    def __init__(self):
+        super(Policy, self).__init__()
+        self.training = False
+    
+    def train(self):
+        self.training = True
+
+    def eval(self):
+        self.training = False
+
+class DoubleIntegratorPolicy(Policy):
     def __init__(self, state_dim, action_dim, hidden_dims):
         super(DoubleIntegratorPolicy, self).__init__()
         self.state_dim = state_dim
@@ -37,7 +48,7 @@ class DoubleIntegratorPolicy(nn.Module):
     def get_action_type(self):
         return ActionType.DISTRIBUTION
 
-class DoubleIntegratorPolicyLSTM(nn.Module):
+class DoubleIntegratorPolicyLSTM(Policy):
     def __init__(self, state_dim, action_dim, hidden_dims):
         super(DoubleIntegratorPolicyLSTM, self).__init__()
         self.state_dim = state_dim
@@ -86,14 +97,17 @@ class DoubleIntegratorPolicyLSTM(nn.Module):
     def get_action_type(self):
         return ActionType.DISTRIBUTION
 
-class GaussianPolicy(nn.Module):
+class GaussianPolicy(Policy):
     def __init__(self, state_dim, action_dim, hidden_dims, 
-                 std_init=0.2, std_min=1e-5, std_max=0.6):
+                 std_init=0.2, std_min=1e-5, std_max=0.6,
+                 temperature_init=1, temperature_decay=1):
         
         super(GaussianPolicy, self).__init__()
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.hidden_dims = hidden_dims
+        self.temperature = temperature_init
+        self.temperature_decay = temperature_decay
 
         self.fc1 = nn.Linear(state_dim, hidden_dims[0])
         self.fcs = nn.ModuleList()
@@ -121,7 +135,10 @@ class GaussianPolicy(nn.Module):
         log_std = self.log_std
         log_std = self.log_std_min + torch.nn.functional.softplus(log_std - self.log_std_min)
         log_std = self.log_std_max - torch.nn.functional.softplus(self.log_std_max - log_std)
-        std = torch.exp(log_std)
+        std = torch.exp(log_std) * self.temperature
+
+        if self.training and self.temperature > 1e-9:
+            self.temperature *= self.temperature_decay
 
         return mean, std
 
@@ -131,7 +148,7 @@ class GaussianPolicy(nn.Module):
     def reset(self):
         pass
 
-class GaussianStateDependentPolicy(nn.Module):
+class GaussianStateDependentPolicy(Policy):
     def __init__(self, state_dim, action_dim, hidden_dims, std_hidden_dim=16,
                  std_init=0.2, std_min=1e-5, std_max=0.6):
         super(GaussianStateDependentPolicy, self).__init__()

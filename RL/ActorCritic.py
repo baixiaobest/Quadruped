@@ -6,9 +6,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 import torch
 from RL.GradientOperators import GradientOperator as GO
 from RL.PolicyNetwork import ActionType
+import numpy as np
 
 class ActorCriticOneStep:
-    def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, num_episodes=1000, max_steps=100, gamma=0.99):
+    def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, 
+                 num_episodes=1000, max_steps=100, gamma=0.99, print_info=True):
         self.env = env
         self.policy = policy
         self.value_func = value_func
@@ -17,6 +19,8 @@ class ActorCriticOneStep:
         self.num_episodes = num_episodes
         self.max_steps = max_steps
         self.gamma = gamma
+        self.print_info = print_info
+
         self.return_list = []
     
     def train(self):
@@ -44,9 +48,9 @@ class ActorCriticOneStep:
                 
                 elif self.policy.get_action_type() == ActionType.GAUSSIAN:
                     mean, std = self.policy.forward(state.detach())
-                    # if step == 0:
-                    #     print(f"mean: {mean}")
-                    #     print(f"std: {std}\n")
+                    if step == 0:
+                        print(f"mean: {mean}")
+                        print(f"std: {std}\n")
                     action_dist = torch.distributions.Normal(mean, std)
                     action = action_dist.sample()
                     action_log_prob = action_dist.log_prob(action).sum(dim=-1)
@@ -55,7 +59,7 @@ class ActorCriticOneStep:
                 next_state, reward, terminated, truncated, info = self.env.step(action)
                 next_state = torch.tensor(next_state, dtype=torch.float32)
 
-                if info:
+                if info and self.print_info:
                     print(info)
 
                 rewards.append(reward)

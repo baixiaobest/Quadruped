@@ -6,14 +6,17 @@ class DoubleIntegrator1D:
                  delta_t=0.05, 
                  target_x=0, 
                  goal_reward=1e2, 
+                 out_of_bound_penalty=1e2,
                  x_bound=[-10, 10], 
+                 x_init_bound=[-5, 5],
                  v_bound=[-5, 5], 
+                 v_init_bound=[-1, 1],
                  v_penalty=0.1, 
                  action_range=[-1, 1],
                  time_penalty=0.01, 
                  action_penalty=0.1, 
                  action_change_panelty=0.1, 
-                 action_smooth=0.9, 
+                 action_smooth=0.7, 
                  x_epsilon=0.1, 
                  vx_epsilon=0.1,
                  noise={'x': 0, 'vx': 0, 'action': 0},
@@ -25,6 +28,7 @@ class DoubleIntegrator1D:
         self.vx = 0
         self.target_x = target_x
         self.goal_reward = goal_reward
+        self.out_of_bound_penalty = out_of_bound_penalty
         self.v_penalty = v_penalty
         self.action_range = action_range
         self.time_penalty = time_penalty
@@ -32,7 +36,9 @@ class DoubleIntegrator1D:
         self.action_change_panelty = action_change_panelty
         self.action_smooth = action_smooth
         self.x_bound = x_bound
+        self.x_init_bound = x_init_bound
         self.v_bound = v_bound
+        self.v_init_bound = v_init_bound
         self.x_epsilon = x_epsilon
         self.vx_epsilon = vx_epsilon
         self.noise = noise
@@ -46,8 +52,8 @@ class DoubleIntegrator1D:
             self.x = 5
             self.vx = 0.5
         else:
-            self.x = random.uniform(self.x_bound[0]/2, self.x_bound[1]/2)
-            self.vx = random.uniform(self.v_bound[0]/2, self.v_bound[1]/2) 
+            self.x = random.uniform(self.x_init_bound[0], self.x_init_bound[1])
+            self.vx = random.uniform(self.v_init_bound[0], self.v_init_bound[1]) 
 
         if self.random_bias:
             self.bias = {
@@ -96,7 +102,7 @@ class DoubleIntegrator1D:
         truncated = False
         info = ""
         if self.x < self.x_bound[0] or self.x > self.x_bound[1]:
-            reward -= 1e2
+            reward -= self.out_of_bound_penalty
             terminated = True
             info = "Out of bounds"
 

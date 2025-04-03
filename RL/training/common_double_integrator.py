@@ -33,14 +33,13 @@ def visualize_policy(policy, x_range=(-10, 10), vx_range=(-5, 5), resolution=50)
             state = np.array([X[i, j], VX[i, j]])
             state_tensor = torch.tensor(state, dtype=torch.float32)
             with torch.no_grad():
-                actions = policy(state_tensor)
                 if policy.get_action_type() == ActionType.DISTRIBUTION:
+                    actions = policy(state_tensor)
                     action = torch.argmax(actions)
                     A[i, j] = action.item()
                 elif policy.get_action_type() == ActionType.GAUSSIAN:
-                    action = actions[0]
-                    std = actions[1]
-                    A[i, j] = action.item()
+                    mean, std = policy(state_tensor)
+                    A[i, j] = mean.item()
                     STD[i, j] = std.item()
     
     # Plotting the 3D surface
@@ -97,7 +96,47 @@ def plot_returns(returns_list):
     plt.ylabel('Variance')
     plt.title(f'Windowed Variance over Episodes, window={window}')
 
-def inference(policy, noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 0}):
+def inference(policy, env):
+    state, _ = env.reset()
+    rewards = []
+    state_list = []
+    action_list = []
+
+    with torch.no_grad():
+        for step in range(1000):
+            state_list.append(state)
+            state_t = torch.tensor(state, dtype=torch.float32)
+
+            action = None
+            if policy.get_action_type() == ActionType.DISTRIBUTION:
+                actions_prob = policy.forward(state_t)
+                dist = torch.distributions.Categorical(actions_prob)
+                action_idx = dist.sample()
+                action = policy.get_action(action_idx).item()
+            
+            elif policy.get_action_type() == ActionType.GAUSSIAN:
+                mean, std = policy.forward(state_t)
+                action_dist = torch.distributions.Normal(mean, std)
+                action = action_dist.sample()
+                action = action.detach().numpy()
+
+            next_state, reward, terminated, truncated, info = env.step(action)
+
+            if info:
+                print(info)
+
+            rewards.append(reward)
+
+            state = next_state
+            action_list.append(env.get_action())
+
+            if terminated or truncated:
+                print("done")
+                break
+
+    return rewards, state_list, action_list
+
+def inference_double_integrator(policy, noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 0}):
     # Create the environment
     env = DoubleIntegrator1D(
         delta_t=0.05, 
@@ -116,42 +155,7 @@ def inference(policy, noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 
         bias=bias
     )
     
-    state, _ = env.reset()
-    rewards = []
-    state_list = []
-    action_list = []
-
-    with torch.no_grad():
-        for step in range(10000):
-            state_list.append(state)
-            state_t = torch.tensor(state, dtype=torch.float32)
-
-            action = None
-            if policy.get_action_type() == ActionType.DISTRIBUTION:
-                actions_prob = policy.forward(state_t)
-                dist = torch.distributions.Categorical(actions_prob)
-                action_idx = dist.sample()
-                action = policy.get_action(action_idx).item()
-            
-            elif policy.get_action_type() == ActionType.GAUSSIAN:
-                mean, std = policy.forward(state_t)
-                action_dist = torch.distributions.Normal(mean, std)
-                action = action_dist.rsample()
-                action = action.detach().numpy()
-
-            next_state, reward, terminated, truncated, info = env.step(action)
-
-            if info:
-                print(info)
-
-            rewards.append(reward)
-
-            state = next_state
-            action_list.append(env.get_action())
-
-            if terminated or truncated:
-                print("done")
-                break
+    rewards, state_list, action_list = inference(policy, env)
 
     print(f"Total reward: {sum(rewards)}")
     plot_inference(state_list, action_list)
