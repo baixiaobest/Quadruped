@@ -7,3 +7,4 @@ RL/training/__pycache__/
 RL/training/photos/
 RL/training/models/
 RL/training/value_models/
+RL/training/log/

@@ -96,7 +96,7 @@ def plot_returns(returns_list):
     plt.ylabel('Variance')
     plt.title(f'Windowed Variance over Episodes, window={window}')
 
-def inference(policy, env):
+def inference(policy, env, deterministic=False):
     state, _ = env.reset()
     rewards = []
     state_list = []
@@ -116,9 +116,12 @@ def inference(policy, env):
             
             elif policy.get_action_type() == ActionType.GAUSSIAN:
                 mean, std = policy.forward(state_t)
-                action_dist = torch.distributions.Normal(mean, std)
-                action = action_dist.sample()
-                action = action.detach().numpy()
+                if not deterministic:
+                    action_dist = torch.distributions.Normal(mean, std)
+                    action = action_dist.sample()
+                    action = action.detach().numpy()
+                else:
+                    action = mean.numpy()
 
             next_state, reward, terminated, truncated, info = env.step(action)
 
@@ -128,7 +131,7 @@ def inference(policy, env):
             rewards.append(reward)
 
             state = next_state
-            action_list.append(env.get_action())
+            # action_list.append(env.get_action())
 
             if terminated or truncated:
                 print("done")

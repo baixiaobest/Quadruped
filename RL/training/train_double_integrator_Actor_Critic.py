@@ -14,12 +14,13 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from RL.training.common_double_integrator import *
 from RL.PPO import PPO
+from RL.Logger import Logger
 
 def train(load, seed, file_name, 
           num_episodes=1000, max_steps=200, 
           x_init_bound=[-5, 5], v_init_bound=[-1, 1],
           x_epsilon=0.5, vx_epsilon=0.1, 
-          show=False, algorithm="one_step", random_action_bias=0, policy_type='simple',
+          show=False, algorithm_name="one_step", random_action_bias=0, policy_type='simple',
           debug=False):
     
     random.seed(seed)
@@ -64,11 +65,12 @@ def train(load, seed, file_name,
 
     value_optimizer = torch.optim.Adam(value_net.parameters(), lr=1e-3)
 
-    # Create the REINFORCE agent
-    trainer = None
+    algorithm = None
 
-    if algorithm == "one_step":
-        trainer = ActorCriticOneStep(
+    logger = Logger()
+
+    if algorithm_name == "one_step":
+        algorithm = ActorCriticOneStep(
             env, 
             policy, 
             policy_optimizer, 
@@ -78,8 +80,8 @@ def train(load, seed, file_name,
             max_steps=max_steps, 
             gamma=0.99)
     
-    elif algorithm == "eligibility_trace":
-        trainer = ActorCriticEligibilityTrace(
+    elif algorithm_name == "eligibility_trace":
+        algorithm = ActorCriticEligibilityTrace(
             env, 
             policy, 
             policy_optimizer, 
@@ -92,8 +94,8 @@ def train(load, seed, file_name,
             lambda_value=0.1,
             policy_trace_max=1,
             value_trace_max=1)
-    elif algorithm == 'PPO':
-        trainer = PPO(
+    elif algorithm_name == 'PPO':
+        algorithm = PPO(
             env=env, 
             policy=policy, 
             policy_optimizer=policy_optimizer, 
@@ -106,20 +108,21 @@ def train(load, seed, file_name,
             n_step=10,
             # batch_size=10, 
             n_epoch=5, 
-            epsilon=0.2)
+            epsilon=0.2,
+            logger=logger)
     else:
         print("Invalid algorithm")
         return
 
     # Train the agent
-    trainer.train()
+    algorithm.train()
 
     # Save the policy
     torch.save(policy.state_dict(), f'RL/training/models/{file_name}.pth')
     torch.save(value_net.state_dict(), f'RL/training/value_models/{file_name}.pth')
 
     if show:
-        plot_returns(trainer.get_returns_list())
+        plot_returns(algorithm.get_returns_list())
         visualize_policy(policy)
         plt.show()
 

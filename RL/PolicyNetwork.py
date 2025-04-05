@@ -141,6 +141,22 @@ class GaussianPolicy(Policy):
             self.temperature *= self.temperature_decay
 
         return mean, std
+    
+    def set_std(self, new_std):
+        """
+        Directly set the standard deviation (std) of the policy.
+        Args:
+            new_std (float or torch.Tensor): New standard deviation value(s).
+        """
+        if isinstance(new_std, float):
+            new_std = torch.ones(self.action_dim) * new_std
+        
+        new_std = torch.clamp(new_std, self.std_min, self.std_max)
+        
+        # Convert std to log_std and update the parameter
+        new_log_std = torch.log(new_std)
+        with torch.no_grad():  # Avoid tracking this change in gradients
+            self.log_std.copy_(new_log_std)
 
     def get_action_type(self):
         return ActionType.GAUSSIAN
