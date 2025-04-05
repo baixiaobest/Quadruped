@@ -32,8 +32,9 @@ class PPO:
         self.logger = logger
         self.improve_callback = improve_callback
 
-        self.policy_max_norm = 1.0
-        self.value_max_norm = 1.0
+        self.policy_max_norm = 1e-2
+        self.value_max_norm = 1e-2
+        self.reward_clip = 10
 
         self.return_list = []
     
@@ -43,7 +44,7 @@ class PPO:
 
         max_return = -np.inf
 
-        reward_stats = DiscountedSumRunningStats(beta=0.99, gamma=self.gamma)
+        reward_stats = DiscountedSumRunningStats(beta=0.9, gamma=self.gamma)
 
         for episode in range(self.num_episodes):
             state, _ = self.env.reset()
@@ -67,32 +68,43 @@ class PPO:
 
                 next_state, reward, terminated, truncated, info = self.env.step(action.numpy())
                 next_state = torch.tensor(next_state, dtype=torch.float32)
-                
                 done = terminated or truncated
+
+                # reward = np.clip(reward, -self.reward_clip, self.reward_clip)
                 
                 episode_rewards.append(reward)
-                reward_stats.update(reward)
 
+                # Scale down the reward to stablize the training
+                reward_stats.update(reward)
                 scaled_reward = reward
                 if reward_stats.get_count() > 10:
-                    scaled_reward /= (reward_stats.get_std() + 1e-5)
+                    scale = np.clip(reward_stats.get_std(), 1.0, np.inf)
+                    scaled_reward /= scale
+                
+                target = reward + self.gamma * self.value_func(next_state).detach() * (1-done)
+                value = self.value_func(state).detach()
+                td_error =  target - value
 
                 trajectory.append({
                     'state': state, 
                     'action': action, 
                     'log_prob_old': action_log_prob.detach(),
+                    'old_value': value,
                     'reward': reward,
                     'scaled_reward': scaled_reward,
                     'next_state': next_state})
                 
-                # Logging only
-                td_error = reward + self.gamma * self.value_func(next_state).detach() * (1-done) \
-                                    - self.value_func(state).detach()
-                
                 self.logger.log('td_error', td_error.item(), step=step, episode=episode)
+                self.logger.log('target', target.item(), step=step, episode=episode)
+                self.logger.log('value', value.item(), step=step, episode=episode)
+                self.logger.log('reward', reward, step=step, episode=episode)
                 self.logger.log('scaled_reward', scaled_reward, step=step, episode=episode)
                 self.logger.log('discounted_sum_mean', reward_stats.get_mean(), step=step, episode=episode)
                 self.logger.log('discounted_sum_std', reward_stats.get_std(), step=step, episode=episode)
+                # Iterate of actions
+                for idx, p_std in enumerate(std):
+                    self.logger.log(f'policy_output_std_{idx}', p_std.item(), step=step, episode=episode)
+                self.logger.log('policy_output_std_mean', std.mean().item(), step=step, episode=episode)
 
                 # Stop and compute advantages
                 if (not step == 0) and (step % self.n_step == 0) \
@@ -101,15 +113,25 @@ class PPO:
 
                     for epoch in range(self.n_epoch):
                         
-                        # Recompute td errors on every update
+                        # Recompute td errors given current value function on every update
                         td_errors = []
+                        clipped_td_errors = []
                         for idx, traj in enumerate(trajectory):
                             if done and (idx == len(trajectory) - 1):
-                                td_error = traj['reward']  - self.value_func(traj['state'])
+                                new_target = traj['scaled_reward']
                             else:
-                                td_error = traj['reward'] + self.gamma * self.value_func(traj['next_state']).detach() \
-                                    - self.value_func(traj['state'])
-                            td_errors.append(td_error)
+                                # Target is constant therefore it needs to be detached.
+                                new_target = traj['scaled_reward'] \
+                                    + self.gamma * self.value_func(traj['next_state']).detach()
+                                
+                            # Recomputed td errors given current value function
+                            new_value = self.value_func(traj['state'])
+                            new_td_error = new_target - new_value
+                            td_errors.append(new_td_error)
+                            # Compute clipped td errors
+                            clipped_value = torch.clamp(new_value, traj['old_value'] - self.epsilon, traj['old_value'] + self.epsilon)
+                            clipped_td_error = new_target - clipped_value
+                            clipped_td_errors.append(clipped_td_error)
 
                         # Compute advantages from td errors
                         A = 0
@@ -149,19 +171,29 @@ class PPO:
                         self.policy_optimizer.zero_grad()
                         policy_loss.backward()
                         torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.policy_max_norm)
+                        policy_grad_norm = torch.nn.utils.get_total_norm(self.policy.parameters())
                         self.policy_optimizer.step()
 
-                        value_loss = torch.stack(td_errors).pow(2).mean()
+                        value_loss_unclipped = torch.stack(td_errors).pow(2).mean()
+                        value_loss_clipped = torch.stack(clipped_td_errors).pow(2).mean()
+                        value_loss = torch.max(value_loss_unclipped, value_loss_clipped)
+
+                        self.value_optimizer.zero_grad()
+                        value_loss.backward()
+                        torch.nn.utils.clip_grad_norm_(self.value_func.parameters(), self.value_max_norm)
+                        value_func_grad_norm = torch.nn.utils.get_total_norm(self.value_func.parameters())
+                        self.value_optimizer.step()
 
                         self.logger.log('policy_loss_epoch', policy_loss.item(), episode=episode, 
                                         step=(policy_update_round*self.n_epoch + epoch))
                         self.logger.log('value_loss_epoch', value_loss.item(), episode=episode,
                                         step=(policy_update_round*self.n_epoch + epoch))
-
-                        self.value_optimizer.zero_grad()
-                        value_loss.backward()
-                        torch.nn.utils.clip_grad_norm_(self.value_func.parameters(), self.value_max_norm)
-                        self.value_optimizer.step()
+                        self.logger.log('policy_ratio_epoch', r.mean().item(), episode=episode,
+                                        step=(policy_update_round*self.n_epoch + epoch))
+                        self.logger.log('policy_grad_norm_epoch', policy_grad_norm, episode=episode,
+                                        step=(policy_update_round*self.n_epoch + epoch))
+                        self.logger.log('value_grad_norm_epoch', value_func_grad_norm, episode=episode,
+                                        step=(policy_update_round*self.n_epoch + epoch))
 
                     trajectory = []
                     policy_update_round += 1
@@ -180,7 +212,6 @@ class PPO:
                 G = r + self.gamma * G
             self.return_list.append(G)
 
-            self.logger.log('reward', episode_rewards, episode=episode)
             self.logger.log('return', [G], episode=episode)
 
             if self.improve_callback and G > max_return:
