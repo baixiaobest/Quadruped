@@ -50,7 +50,7 @@ class Logger:
         """
         Plot logged data for a key.
         - `x_axis`: 'episode' (X = episode number) or 'step' (X = step number).
-        - `aggregation`: 'mean', 'sum', or 'mean_std' (mean ± std, episode only).
+        - `aggregation`: 'mean', 'sum', 'max', 'min', or 'mean_std' (mean ± std, episode only).
         - `episode`: Required if x_axis='step' to specify which episode to plot.
         - `skip_none`: Whether to ignore None values.
         """
@@ -62,7 +62,7 @@ class Logger:
         if x_axis == 'episode':
             # Aggregate across episodes
             episodes = sorted(self.data[key].keys())
-            x, y_means, y_stds = [], [], []
+            x, y_vals, y_stds = [], [], []
 
             for ep in episodes:
                 values = self.data[key][ep]
@@ -73,26 +73,32 @@ class Logger:
                     continue
                     
                 if aggregation == 'mean':
-                    y_means.append(np.mean(values))
+                    y_vals.append(np.mean(values))
                     x.append(ep)
                 elif aggregation == 'sum':
-                    y_means.append(np.sum(values))
+                    y_vals.append(np.sum(values))
+                    x.append(ep)
+                elif aggregation == 'max':
+                    y_vals.append(np.max(values))
+                    x.append(ep)
+                elif aggregation == 'min':
+                    y_vals.append(np.min(values))
                     x.append(ep)
                 elif aggregation == 'mean_std':
-                    y_means.append(np.mean(values))
+                    y_vals.append(np.mean(values))
                     y_stds.append(np.std(values))
                     x.append(ep)
                 else:
-                    raise ValueError("Invalid aggregation. Use 'mean', 'sum', or 'mean_std'.")
+                    raise ValueError("Invalid aggregation. Use 'mean', 'sum', 'max', 'min', or 'mean_std'.")
 
             plt.xlabel("Episode")
             if aggregation == 'mean_std':
                 # Plot mean ± std with error bars
-                plt.errorbar(x, y_means, yerr=y_stds, fmt='-o', capsize=5, 
+                plt.errorbar(x, y_vals, yerr=y_stds, fmt='-o', capsize=5, 
                             alpha=0.7, label='Mean ± 1 Std')
                 plt.legend()
             else:
-                plt.plot(x, y_means, 'b-', alpha=0.6)
+                plt.plot(x, y_vals, 'b-', alpha=0.6, label=f'{aggregation.capitalize()}')
 
         elif x_axis == 'step':
             # Plot steps for a specific episode
@@ -115,6 +121,7 @@ class Logger:
         plt.ylabel("Value")
         plt.title(f"Logger Data for Key: {key} ({aggregation})")
         plt.grid(True)
+        plt.legend()
 
     def save_to_file(self, filename):
         """

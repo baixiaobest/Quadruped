@@ -61,7 +61,7 @@ class LoggerUI:
         # Aggregation Type
         self.agg_var = tk.StringVar(value="mean")
         ttk.Label(config_frame, text="Aggregation:").grid(row=2, column=0, sticky="w", pady=5)
-        self.agg_menu = ttk.Combobox(config_frame, values=["mean", "sum", "mean_std"], 
+        self.agg_menu = ttk.Combobox(config_frame, values=["mean", "sum", "mean_std", "min", "max"], 
                                     textvariable=self.agg_var, state="readonly", width=12)
         self.agg_menu.grid(row=3, column=0, columnspan=2, sticky="w")
 
