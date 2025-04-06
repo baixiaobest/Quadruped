@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from enum import Enum
 import numpy as np
+import math 
 
 class ActionType(Enum):
     DISTRIBUTION=1,
@@ -99,7 +100,7 @@ class DoubleIntegratorPolicyLSTM(Policy):
 
 class GaussianPolicy(Policy):
     def __init__(self, state_dim, action_dim, hidden_dims, 
-                 std_init=0.2, std_min=1e-5, std_max=0.6,
+                 std_init=0.2, std_min=1e-3, std_max=0.6,
                  temperature_init=1, temperature_decay=1):
         
         super(GaussianPolicy, self).__init__()
@@ -166,7 +167,7 @@ class GaussianPolicy(Policy):
 
 class GaussianStateDependentPolicy(Policy):
     def __init__(self, state_dim, action_dim, hidden_dims, std_hidden_dim=16,
-                 std_init=0.2, std_min=1e-5, std_max=0.6):
+                 std_init=0.2, std_min=1e-3, std_max=0.6):
         super(GaussianStateDependentPolicy, self).__init__()
         self.state_dim = state_dim
         self.action_dim = action_dim
