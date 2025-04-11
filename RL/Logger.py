@@ -2,36 +2,59 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 import pickle
+from enum import Enum
+
+class KeyType(Enum):
+    EPISODE = 1
+    UPDATE = 2
 
 class Logger:
     def __init__(self):
-        self.data = defaultdict(lambda: defaultdict(list))  # key -> episode -> list of step values
-        self.episodes = set()  # Track all unique episodes across keys
+        self.data = defaultdict(lambda: defaultdict(list))  # key -> identifier (episode/update_round) -> list of values
+        self.key_type_map = {}  # Maps each key to KeyType
+        self.episodes = set()  # Track all episodes for EPISODE keys
+        self.update_rounds = set()  # Track all update rounds for UPDATE keys
 
-    def log(self, key, value, episode, step=None):
-        """
-        Log a value for a key, episode, and step.
-        - If `value` is a list, it is treated as an entire episode (step is ignored).
-        - If `value` is a scalar, `step` must be provided.
-        """
-        if isinstance(value, list):
-            # Log an entire episode (list of step values)
-            self.data[key][episode] = value
-            self.episodes.add(episode)
+    def log_episode(self, key, value, episode, step=None):
+        """Log data for an episode-type key."""
+        self._log(key, value, KeyType.EPISODE, identifier=episode, step=step)
+
+    def log_update(self, key, value, update_round, step=None):
+        """Log data for an update-type key."""
+        self._log(key, value, KeyType.UPDATE, identifier=update_round, step=step)
+
+    def _log(self, key, value, key_type, identifier, step=None):
+        # Check key type consistency
+        if key in self.key_type_map:
+            if self.key_type_map[key] != key_type:
+                raise ValueError(f"Key {key} is already registered as {self.key_type_map[key]}, cannot log as {key_type}.")
         else:
-            # Log a single step value
+            self.key_type_map[key] = key_type
+
+        # Track identifier
+        if key_type == KeyType.EPISODE:
+            self.episodes.add(identifier)
+        else:
+            self.update_rounds.add(identifier)
+
+        # Handle logging
+        if isinstance(value, list):
+            self.data[key][identifier] = value
+        else:
             if step is None:
                 raise ValueError("For single values, `step` must be specified.")
-            # Ensure the episode list is long enough to include this step
-            while len(self.data[key][episode]) <= step:
-                self.data[key][episode].append(None)  # Fill missing steps with None
-            self.data[key][episode][step] = value
-            self.episodes.add(episode)
+            while len(self.data[key][identifier]) <= step:
+                self.data[key][identifier].append(None)
+            self.data[key][identifier][step] = value
 
     def get_keys(self):
         """Get all logged keys."""
         return list(self.data.keys())
-    
+
+    def get_key_type(self, key):
+        """Get the KeyType of a key."""
+        return self.key_type_map.get(key)
+
     def get_data(self, key):
         """Get all data for a specific key."""
         if key not in self.data:
@@ -39,144 +62,143 @@ class Logger:
         return self.data[key]
 
     def get_episode_values(self, key, episode):
-        """Get values for a specific key and episode."""
+        """Get values for an episode-type key and episode."""
+        if self.key_type_map.get(key) != KeyType.EPISODE:
+            raise ValueError(f"Key {key} is not an episode-type key.")
         return self.data[key][episode]
 
     def get_all_episodes(self, key):
-        """Get all episodes for a key, sorted by episode number."""
+        """Get all episodes for an episode-type key."""
+        if self.key_type_map.get(key) != KeyType.EPISODE:
+            raise ValueError(f"Key {key} is not an episode-type key.")
         episodes = sorted(self.data[key].keys())
         return [self.data[key][ep] for ep in episodes]
-    def plot(self, key, x_axis='episode', aggregation='mean', episode=None, skip_none=True):
-        """
-        Plot logged data for a key.
-        - `x_axis`: 'episode' (X = episode number) or 'step' (X = step number).
-        - `aggregation`: 'mean', 'sum', 'max', 'min', or 'mean_std' (mean ± std, episode only).
-        - `episode`: Required if x_axis='step' to specify which episode to plot.
-        - `skip_none`: Whether to ignore None values.
-        """
+
+    def plot_episode(self, key, aggregation='mean', episode=None, skip_none=True):
+        """Plot data for an episode-type key."""
+        if self.key_type_map.get(key) != KeyType.EPISODE:
+            raise ValueError(f"Key {key} is not an episode-type key.")
+        x_axis = 'step' if episode is not None else 'episode'
+        xlabel = f"Step in Episode {episode}" if episode is not None else "Episode"
+        self._plot(key, x_axis, aggregation, episode, skip_none, xlabel)
+
+    def plot_update(self, key, aggregation='mean', update_round=None, skip_none=True):
+        """Plot data for an update-type key."""
+        if self.key_type_map.get(key) != KeyType.UPDATE:
+            raise ValueError(f"Key {key} is not an update-type key.")
+        x_axis = 'step' if update_round is not None else 'update_round'
+        xlabel = f"Step in Update Round {update_round}" if update_round is not None  else "Update Round"
+        self._plot(key, x_axis, aggregation, update_round, skip_none, xlabel)
+
+    def _plot(self, key, x_axis, aggregation, identifier, skip_none, xlabel):
         if key not in self.data:
             raise ValueError(f"Key {key} not found in logger.")
 
         plt.figure()
 
-        if x_axis == 'episode':
-            # Aggregate across episodes
-            episodes = sorted(self.data[key].keys())
+        if x_axis in ['episode', 'update_round']:
+            identifiers = sorted(self.data[key].keys())
             x, y_vals, y_stds = [], [], []
 
-            for ep in episodes:
-                values = self.data[key][ep]
+            for iden in identifiers:
+                values = self.data[key][iden]
                 if skip_none:
                     values = [v for v in values if v is not None]
-                
-                if not values:  # Skip episodes with no valid data
+                if not values:
                     continue
-                    
-                if aggregation == 'mean':
-                    y_vals.append(np.mean(values))
-                    x.append(ep)
-                elif aggregation == 'sum':
-                    y_vals.append(np.sum(values))
-                    x.append(ep)
-                elif aggregation == 'max':
-                    y_vals.append(np.max(values))
-                    x.append(ep)
-                elif aggregation == 'min':
-                    y_vals.append(np.min(values))
-                    x.append(ep)
-                elif aggregation == 'mean_std':
-                    y_vals.append(np.mean(values))
-                    y_stds.append(np.std(values))
-                    x.append(ep)
-                else:
-                    raise ValueError("Invalid aggregation. Use 'mean', 'sum', 'max', 'min', or 'mean_std'.")
 
-            plt.xlabel("Episode")
+                if aggregation == 'mean':
+                    y = np.mean(values)
+                elif aggregation == 'sum':
+                    y = np.sum(values)
+                elif aggregation == 'max':
+                    y = np.max(values)
+                elif aggregation == 'min':
+                    y = np.min(values)
+                elif aggregation == 'mean_std':
+                    y = np.mean(values)
+                    y_std = np.std(values)
+                    y_stds.append(y_std)
+                else:
+                    raise ValueError(f"Invalid aggregation: {aggregation}")
+
+                x.append(iden)
+                y_vals.append(y)
+
+            plt.xlabel(xlabel)
+            plt.ylabel("Value")
+            plt.title(f"Logger Data for Key: {key} ({aggregation})")
+            plt.grid(True)
+
             if aggregation == 'mean_std':
-                # Plot mean ± std with error bars
-                plt.errorbar(x, y_vals, yerr=y_stds, fmt='-o', capsize=5, 
-                            alpha=0.7, label='Mean ± 1 Std')
+                plt.errorbar(x, y_vals, yerr=y_stds, fmt='-o', capsize=5, alpha=0.7, label='Mean ± 1 Std')
                 plt.legend()
             else:
-                plt.plot(x, y_vals, 'b-', alpha=0.6, label=f'{aggregation.capitalize()}')
+                plt.plot(x, y_vals, 'b-o', alpha=0.6, label=f'{aggregation.capitalize()}')
+                plt.legend()
 
         elif x_axis == 'step':
-            # Plot steps for a specific episode
-            if episode is None:
-                raise ValueError("For x_axis='step', specify `episode`.")
-            if episode not in self.data[key]:
-                raise ValueError(f"Episode {episode} not found for key {key}.")
-
-            values = self.data[key][episode]
+            if identifier not in self.data[key]:
+                raise ValueError(f"Identifier {identifier} not found for key {key}.")
+            values = self.data[key][identifier]
             if skip_none:
                 values = [v for v in values if v is not None]
-            x = list(range(len(values)))
-            y = values
-            plt.plot(x, y, 'b-', alpha=0.6)
-            plt.xlabel(f"Step in Episode {episode}")
-
+            x_steps = list(range(len(values)))
+            plt.plot(x_steps, values, 'b-o', alpha=0.6)
+            plt.xlabel(xlabel)
+            plt.ylabel("Value")
+            plt.title(f"Logger Data for Key: {key} (Steps)")
+            plt.grid(True)
         else:
-            raise ValueError("Invalid x_axis. Use 'episode' or 'step'.")
-
-        plt.ylabel("Value")
-        plt.title(f"Logger Data for Key: {key} ({aggregation})")
-        plt.grid(True)
-        plt.legend()
+            raise ValueError(f"Invalid x_axis: {x_axis}")
 
     def save_to_file(self, filename):
-        """
-        Save logger data to a file using pickle.
-        Handles defaultdict conversion for proper serialization.
-        """
-        # Convert nested defaultdicts to regular dicts for pickling
-        data_dict = {key: dict(episodes) for key, episodes in self.data.items()}
+        """Save logger data to a file."""
+        data_dict = {key: dict(identifier_dict) for key, identifier_dict in self.data.items()}
         with open(filename, 'wb') as f:
             pickle.dump({
                 'data': data_dict,
-                'episodes': list(self.episodes)
+                'key_type_map': self.key_type_map,
+                'episodes': list(self.episodes),
+                'update_rounds': list(self.update_rounds)
             }, f)
 
     def load_from_file(self, filename):
-        """
-        Load logger data from a pickle file.
-        Restores defaultdict structure after loading.
-        """
+        """Load logger data from a file."""
         with open(filename, 'rb') as f:
             saved_data = pickle.load(f)
-        
-        # Clear existing data
+
         self.data.clear()
+        self.key_type_map.clear()
         self.episodes.clear()
-        
-        # Restore data structure
-        data_dict = saved_data['data']
-        for key, episodes in data_dict.items():
-            self.data[key] = defaultdict(list, episodes)
-        
-        # Restore episodes
-        self.episodes.update(saved_data['episodes'])
+        self.update_rounds.clear()
+
+        for key, identifier_dict in saved_data['data'].items():
+            self.data[key] = defaultdict(list, identifier_dict)
+
+        self.key_type_map.update(saved_data['key_type_map'])
+        self.episodes.update(saved_data.get('episodes', []))
+        self.update_rounds.update(saved_data.get('update_rounds', []))
 
 # Example Usage
 if __name__ == "__main__":
     logger = Logger()
 
-    # Log single values for episode 0
-    logger.log('reward', 1.0, episode=0, step=0)
-    logger.log('reward', 2.0, episode=0, step=1)
+    # Log episode-type data
+    logger.log_episode('reward', 1.0, episode=0, step=0)
+    logger.log_episode('reward', 2.0, episode=0, step=1)
+    logger.log_episode('reward', [3.0, 4.0, 5.0], episode=1)
 
-    # Log an entire episode (episode 1)
-    logger.log('reward', [3.0, 4.0, 5.0], episode=1)
+    # Log update-type data
+    logger.log_update('loss', 0.5, update_round=0, step=0)
+    logger.log_update('loss', 0.3, update_round=1, step=0)
+    logger.log_update('loss', [0.2, 0.1], update_round=2)
 
-    # Log another key
-    logger.log('loss', 0.5, episode=0, step=0)
-    logger.log('loss', 0.3, episode=1, step=0)
+    # Plotting
+    logger.plot_episode('reward', aggregation='mean_std')
+    logger.plot_episode('reward', episode=0)
 
-    # Plot rewards aggregated by episode (mean)
-    logger.plot('reward', x_axis='episode', aggregation='mean_std')
-
-    # Plot raw rewards by step
-    logger.plot('reward', x_axis='step', episode=0)
-
-    logger.plot('loss', x_axis='episode', aggregation='sum')
+    logger.plot_update('loss', aggregation='sum')
+    logger.plot_update('loss', update_round=1)
 
     plt.show()

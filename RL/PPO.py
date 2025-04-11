@@ -89,21 +89,21 @@ class PPO:
                     'reward': reward,
                     'done': done})
                 
-                self.logger.log('td_error', td_error.item(), step=step, episode=episode)
-                self.logger.log('target', target.item(), step=step, episode=episode)
-                self.logger.log('value', value.item(), step=step, episode=episode)
-                self.logger.log('reward', reward, step=step, episode=episode)
+                self.logger.log_episode('td_error', td_error.item(), step=step, episode=episode)
+                self.logger.log_episode('target', target.item(), step=step, episode=episode)
+                self.logger.log_episode('value', value.item(), step=step, episode=episode)
+                self.logger.log_episode('reward', reward, step=step, episode=episode)
 
                 # Iterate of actions
                 for idx, p_std in enumerate(std):
-                    self.logger.log(f'policy_output_std_{idx}', p_std.item(), step=step, episode=episode)
-                self.logger.log('policy_output_std_mean', std.mean().item(), step=step, episode=episode)
+                    self.logger.log_episode(f'policy_output_std_{idx}', p_std.item(), step=step, episode=episode)
+                self.logger.log_episode('policy_output_std_mean', std.mean().item(), step=step, episode=episode)
 
                 # Stop and compute td errors and advantage
                 if steps_elapsed > 0 and steps_elapsed % self.n_step_per_update == 0:
 
                     curr_round_avg_ret = np.mean(update_round_returns)
-                    self.logger.log('rollout_return_mean->update_round', [curr_round_avg_ret], episode=update_round_count)
+                    self.logger.log_update('rollout_return_mean', [curr_round_avg_ret], update_round=update_round_count)
                     update_round_returns = []
                     print(f"Round {update_round_count} average return: {curr_round_avg_ret}")
                     print(f"steps elapsed: {steps_elapsed}")
@@ -173,14 +173,14 @@ class PPO:
                             self.value_optimizer.step()
 
                             index = int(epoch * self.n_step_per_update / self.batch_size + batch_start / self.batch_size)
-                            self.logger.log('policy_loss->update_round->batch_round', policy_loss.item(), episode=update_round_count, step=index)
-                            self.logger.log('value_loss->update_round->batch_round', value_loss.item(), episode=update_round_count, step=index)
-                            self.logger.log('policy_ratio->update_round->batch_round', r.mean().item(), episode=update_round_count, step=index)
-                            self.logger.log('policy_grad_norm->update_round->batch_round', policy_grad_norm.item(), episode=update_round_count, step=index)
-                            self.logger.log('value_grad_norm->update_round->batch_round', value_func_grad_norm.item(), episode=update_round_count, step=index)
-                            self.logger.log('entropy->update_round->batch_round', entropy.item(), episode=update_round_count, step=index)
-                            self.logger.log('kl_div_est_mean->update_round->batch_round', kl_div_est_mean.item(), episode=update_round_count, step=index)
-                            self.logger.log('epoch_number->update_round->batch_round', epoch, episode=update_round_count, step=index)
+                            self.logger.log_update('policy_loss', policy_loss.item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('value_loss', value_loss.item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('policy_ratio', r.mean().item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('policy_grad_norm', policy_grad_norm.item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('value_grad_norm', value_func_grad_norm.item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('entropy', entropy.item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('kl_div_est_mean', kl_div_est_mean.item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('epoch_number', epoch, update_round=update_round_count, step=index)
                         # End minbatch loop
                             
                         if not continue_update:
@@ -211,7 +211,7 @@ class PPO:
             self.return_list.append(G)
             update_round_returns.append(G)
 
-            self.logger.log('return', [G], episode=episode)
+            self.logger.log_episode('return', [G], episode=episode)
 
             print(f"episode {episode} return: {G}")
 
