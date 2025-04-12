@@ -96,14 +96,14 @@ def plot_returns(returns_list):
     plt.ylabel('Variance')
     plt.title(f'Windowed Variance over Episodes, window={window}')
 
-def inference(policy, env, deterministic=False):
+def inference(policy, env, max_step=1000, continue_on_terminate=False, deterministic=False):
     state, _ = env.reset()
     rewards = []
     state_list = []
     action_list = []
 
     with torch.no_grad():
-        for step in range(1000):
+        for step in range(max_step):
             state_list.append(state)
             state_t = torch.tensor(state, dtype=torch.float32)
 
@@ -131,11 +131,17 @@ def inference(policy, env, deterministic=False):
             rewards.append(reward)
 
             state = next_state
-            # action_list.append(env.get_action())
+            
+            has_get_action = getattr(env, "get_action", None)
+            if has_get_action:
+                action_list.append(env.get_action())
 
             if terminated or truncated:
-                print("done")
-                break
+                if continue_on_terminate:
+                    state, _ = env.reset()
+                else:
+                    print("done")
+                    break
 
     return rewards, state_list, action_list
 

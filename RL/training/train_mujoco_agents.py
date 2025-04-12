@@ -57,6 +57,16 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         # Value network
         value_net = SimpleValuePolicy(state_dim=17, hidden_dims=[64, 64])
         value_optimizer = torch.optim.Adam(value_net.parameters(), lr=4e-4)
+
+    elif env_name == "ant":
+        env = create_ant(render_mode=render_mode)
+
+        # Policy network and optimizer
+        policy = create_ant_policy()
+        policy_optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
+        # Value network
+        value_net = SimpleValuePolicy(state_dim=105, hidden_dims=[128, 64])
+        value_optimizer = torch.optim.Adam(value_net.parameters(), lr=3e-4)
     else:
         raise ValueError(f"Unknown environment: {env_name}")
 
@@ -202,7 +212,7 @@ def create_walker(render_mode=None):
     env = gym.make("Walker2d-v5", 
                    render_mode=render_mode, 
                    forward_reward_weight=1.0,
-                   thigh_movement_reward_weight=0.05,
+                   thigh_movement_reward_weight=0.01,
                    healthy_angle_range=(-1, 1),
                    healthy_z_range=(0.8, 3.0),
                    ctrl_cost_weight=0.05)
@@ -221,46 +231,97 @@ def inference_walker(file_name, render=True):
 
     env.close()
 
+############################################
+### Ant
+############################################
+def create_ant_policy():
+    policy = GaussianPolicy(state_dim=105, action_dim=8, hidden_dims=[128, 64], 
+                            std_init=0.2, std_min=1e-4, std_max=0.6, temperature_decay=1)
+    
+    return policy
+
+def create_ant(render_mode=None):
+    env = gym.make("Ant-v5", 
+                   render_mode=render_mode, 
+                   forward_reward_weight=1.0,
+                   contact_cost_weight=5e-4,
+                   healthy_z_range=(0.8, 3.0),
+                   ctrl_cost_weight=0.2)
+    
+    return env
+
+def inference_ant(file_name, render=True):
+    render_mode = 'human' if render else None
+    env = create_ant(render_mode=render_mode)
+
+    # Policy network and optimizer
+    policy = create_ant_policy()
+    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+
+    inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
+
+    env.close()
+
 
 ############################################
 ### Stable baselines3
 ############################################
 
-def run_sb_PPO(load=False):
+def run_sb_PPO(env_name="walker", load=False):
     from stable_baselines3 import PPO
 
     # Create environment for training (without rendering)
-    # env = gym.make("Hopper-v5", render_mode="human")
-    env = gym.make("Walker2d-v5", 
+
+    if env_name == "hopper":
+        env = gym.make("Hopper-v5", render_mode="human")
+
+    elif env_name == "walker":
+        env = gym.make("Walker2d-v5", 
                    render_mode='human', 
                    forward_reward_weight=1.0,
                    thigh_movement_reward_weight=0.05,
-                   healthy_angle_range=(-1, 1),
                    healthy_z_range=(0.8, 3.0),
                    ctrl_cost_weight=0.05)
+        
+    elif env_name == "ant":
+        env = gym.make("Ant-v5", 
+                   render_mode='human', 
+                   forward_reward_weight=1.0,
+                   contact_cost_weight=5e-4,
+                   healthy_z_range=(0.8, 3.0),
+                   ctrl_cost_weight=0.05)
+    else:
+        raise ValueError(f"Unknown environment: {env_name}")
     
     # Initialize and train the model
     if load:
-        model = PPO.load("RL/training/models/ppo_walker", env=env)
+        model = PPO.load(f"RL/training/models/ppo_{env_name}", env=env)
     else:
         model = PPO("MlpPolicy", env, verbose=1)
     model.learn(total_timesteps=1_000_000)
     
     # Save the trained model
     # model.save("RL/training/models/ppo_hopper")
-    model.save("RL/training/models/ppo_walker")
+    model.save(f"RL/training/models/stable_baseline_ppo_{env_name}")
     print("Model saved.")
 
     # Close the training environment
     env.close()
 
-def inference_sb_PPO():
+def inference_sb_PPO(env_name="walker"):
     from stable_baselines3 import PPO
 
     # Now load the model and visualize
-    loaded_model = PPO.load("RL/training/models/ppo_walker")
+    loaded_model = PPO.load(f"RL/training/models/ppo_{env_name}")
     
-    render_env = gym.make("Walker2d-v5", render_mode="human")
+    if env_name == "hopper":
+        render_env = gym.make("Hopper-v5", render_mode="human")
+    elif env_name == "walker":
+        render_env = gym.make("Walker2d-v5", render_mode="human")
+    elif env_name == "ant":
+        render_env = gym.make("Ant-v5", render_mode="human")
+    else:
+        raise ValueError(f"Unknown environment: {env_name}")
     obs, _ = render_env.reset()  # Fix 1: Unpack tuple
 
     for _ in range(10000):
@@ -288,26 +349,38 @@ if __name__=='__main__':
 
     # Half Cheetah
 
-    # train(load=False, seed=6335, file_name="half_cheetah_ppo_gaussian", 
-    #       env_name="half_cheetah", num_steps=5000, max_steps_per_episode=500,
-    #       set_policy_std=None, entropy_coef=0.02, show=True, render=True)
+    train(load=False, seed=6335, file_name="half_cheetah_ppo_gaussian", 
+          env_name="half_cheetah", num_steps=50000, max_steps_per_episode=500,
+          set_policy_std=None, entropy_coef=0.02, show=True, render=True)
     
     # inference_half_cheetah(file_name="half_cheetah_ppo_gaussian")
 
     # plot_log(file_name="half_cheetah_ppo_gaussian")
 
     # Walker 2d
-    train(load=False, seed=223795, file_name="walker_ppo_gaussian",
-          env_name="walker", policy_type='gaussian', num_steps=500_000, max_steps_per_episode=500, set_policy_std=0.4, 
-          entropy_coef=0.0, show=True, render=True)
+    # train(load=False, seed=23795, file_name="walker_ppo_gaussian",
+    #       env_name="walker", policy_type='gaussian', num_steps=2_000_000, max_steps_per_episode=500, set_policy_std=0.4, 
+    #       entropy_coef=0.02, show=True, render=True)
 
-    # train(load=True, seed=5199, file_name="walker_ppo_gaussian",
-    #       env_name="walker", policy_type='gaussian', num_steps=500_000, max_steps_per_episode=500, set_policy_std=0.4, 
-    #       start_policy_name="walker_ppo_gaussian", entropy_coef=0.01, show=True, render=True)
+    # train(load=True, seed=843684, file_name="walker_ppo_gaussian",
+    #       env_name="walker", policy_type='gaussian', num_steps=2_000_000, max_steps_per_episode=500, set_policy_std=0.2, 
+    #       start_policy_name="walker_ppo_gaussian", entropy_coef=0.02, show=True, render=True)
      
     # inference_walker(file_name="walker_ppo_gaussian")
 
     # plot_log(file_name="walker_ppo_gaussian")
 
-    # run_sb_PPO(load=False)
+    # run_sb_PPO(env_name="walker", load=True)
+    # inference_sb_PPO(env_name="walker")
+
+    # Ant
+    # train(load=False, seed=22795, file_name="ant_ppo_gaussian",
+    #       env_name="ant", policy_type='gaussian', num_steps=500_000, max_steps_per_episode=500, 
+    #       set_policy_std=0.4, entropy_coef=0.0, show=True, render=True)
+
+    # inference_ant(file_name="ant_ppo_gaussian")
+
+    # plot_log(file_name="ant_ppo_gaussian")
+
+    # run_sb_PPO(env_name="ant", load=False)
     # inference_sb_PPO()

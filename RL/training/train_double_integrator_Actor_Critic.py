@@ -15,13 +15,14 @@ import numpy as np
 from RL.training.common_double_integrator import *
 from RL.PPO import PPO
 from RL.Logger import Logger
+from RL.LoggerUI import LoggerUI
 
 def train(load, seed, file_name, 
           num_episodes=1000, max_steps=200, 
           x_init_bound=[-5, 5], v_init_bound=[-1, 1],
           x_epsilon=0.5, vx_epsilon=0.1, 
           show=False, algorithm_name="one_step", random_action_bias=0, policy_type='simple',
-          debug=False):
+          set_policy_std=None, debug=False):
     
     random.seed(seed)
     torch.manual_seed(seed)
@@ -37,7 +38,7 @@ def train(load, seed, file_name,
         v_init_bound=v_init_bound,
         action_range=[-5, 5],
         v_penalty=0.1, 
-        time_penalty=0.2, 
+        time_penalty=0.5, 
         action_penalty=0, 
         action_change_panelty=0,
         action_smooth=0.7, 
@@ -53,6 +54,8 @@ def train(load, seed, file_name,
 
     if load:
         policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+        if set_policy_std:
+            policy.set_std(set_policy_std)
 
     # Create optimizer
     policy_optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
@@ -101,14 +104,17 @@ def train(load, seed, file_name,
             policy_optimizer=policy_optimizer, 
             value_func=value_net, 
             value_optimizer=value_optimizer, 
-            num_episodes=num_episodes, 
-            max_steps=max_steps, 
+            total_num_steps=num_episodes, 
+            max_steps_per_episode=max_steps, 
             gamma=0.99, 
-            lambda_decay=1.0, 
-            n_step=10,
-            # batch_size=10, 
-            n_epoch=5, 
+            lambda_decay=0.95, 
+            entropy_coef=0,
+            n_step_per_update=2048,
+            batch_size=64, 
+            n_epoch=10, 
             epsilon=0.2,
+            value_func_epsilon=None,
+            kl_threshold=0.1,
             logger=logger)
     else:
         print("Invalid algorithm")
@@ -124,7 +130,12 @@ def train(load, seed, file_name,
     if show:
         plot_returns(algorithm.get_returns_list())
         visualize_policy(policy)
-        plt.show()
+        if algorithm_name == 'PPO':
+            logger.save_to_file(f'RL/training/log/{file_name}.pkl')
+            ui = LoggerUI(logger)
+            ui.run()
+        else:
+            plt.show()
 
 def create_policy(policy_type='simple'):
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=100, hidden_dims=[16, 64])
@@ -145,6 +156,12 @@ def load_policy(file_name, policy_type='simple'):
     policy.eval()
     return policy
 
+def plot_log(file_name):
+    logger = Logger()
+    logger.load_from_file(f'RL/training/log/{file_name}.pkl')
+    ui = LoggerUI(logger)
+    ui.run()
+
 if __name__ == '__main__':
     # policy1 = load_policy("double_integrator_actor_critic_trace", policy_type='simple')
     # policy2 = load_policy("double_integrator_actor_critic_trace_lstm", policy_type='lstm')
@@ -162,33 +179,36 @@ if __name__ == '__main__':
     # One step actor critic
 
     # train(load=False, seed=45, file_name='double_integrator_actor_critic', num_episodes=500, 
-    #       max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=False, algorithm="one_step", policy_type='simple')
+    #       max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=False, algorithm_name="one_step", policy_type='simple')
     # train(load=True, seed=50, file_name='double_integrator_actor_critic', num_episodes=500, max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True)
 
     # Eligibility Trace
 
     # train(load=False, seed=45, file_name='double_integrator_actor_critic_trace', num_episodes=500, 
-    #       max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=True, algorithm="eligibility_trace", 
+    #       max_steps=500, x_epsilon=0.5, vx_epsilon=1, show=True, algorithm_name="eligibility_trace", 
     #       random_action_bias=2)
     # train(load=True, seed=50, file_name='double_integrator_actor_critic_trace', num_episodes=500, 
-    #     max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True, algorithm="eligibility_trace", 
+    #     max_steps=500, x_epsilon=0.1, vx_epsilon=0.05, show=True, algorithm_name="eligibility_trace", 
     #     random_action_bias=4)
     
     # Gaussian output
 
     # train(load=False, seed=10, file_name='double_integrator_actor_critic_gaussian', num_episodes=500, 
-    #       max_steps=500, x_epsilon=0.5, vx_epsilon=0.2, show=True, algorithm="one_step", 
+    #       max_steps=500, x_epsilon=0.5, vx_epsilon=0.2, show=True, algorithm_name="one_step", 
     #       random_action_bias=0, policy_type='gaussian', debug=True)
     
     # train(load=True, seed=26, file_name='double_integrator_actor_critic_gaussian', num_episodes=100, 
-    #       max_steps=500, x_epsilon=0.1, vx_epsilon=0.1, show=True, algorithm="one_step", 
+    #       max_steps=500, x_epsilon=0.1, vx_epsilon=0.1, show=True, algorithm_name="one_step", 
     #       random_action_bias=0, policy_type='gaussian_decay')
 
     # PPO training
-    # train(load=False, seed=54, file_name='double_integrator_ppo_gaussian', num_episodes=500, 
-    #       max_steps=200, x_init_bound=[-1, 1], v_init_bound=[-0.5, 0.5], x_epsilon=0.5, vx_epsilon=0.2, show=True, algorithm="PPO", 
-    #       random_action_bias=0, policy_type='gaussian_decay')
+    # train(load=False, seed=54, file_name='double_integrator_ppo_gaussian', num_episodes=100_000, 
+    #       max_steps=200, x_init_bound=[-1, 1], v_init_bound=[-0.5, 0.5], x_epsilon=0.1, vx_epsilon=0.1, show=True, algorithm_name="PPO", 
+    #       random_action_bias=0, policy_type='gaussian')
 
-    # train(load=False, seed=513, file_name='double_integrator_ppo_gaussian', num_episodes=500, 
-    #       max_steps=200, x_init_bound=[-5, 5], v_init_bound=[-1, 1], x_epsilon=0.1, vx_epsilon=0.1, show=True, algorithm="PPO", 
-    #       random_action_bias=0, policy_type='gaussian', debug=True)
+    # train(load=True, seed=874, file_name='double_integrator_ppo_gaussian', num_episodes=200, 
+    #       max_steps=200, x_init_bound=[-5, 5], v_init_bound=[-1, 1], x_epsilon=0.1, vx_epsilon=0.1, 
+    #       show=True, algorithm_name="PPO", random_action_bias=0, policy_type='gaussian', 
+    #       set_policy_std=0.4, debug=False)
+    
+    # plot_log("double_integrator_ppo_gaussian")
