@@ -134,7 +134,7 @@ class Logger:
                 plt.errorbar(x, y_vals, yerr=y_stds, fmt='-o', capsize=5, alpha=0.7, label='Mean ± 1 Std')
                 plt.legend()
             else:
-                plt.plot(x, y_vals, 'b-o', alpha=0.6, label=f'{aggregation.capitalize()}')
+                plt.plot(x, y_vals, 'b-o', markersize=0.5, alpha=0.6, label=f'{aggregation.capitalize()}')
                 plt.legend()
 
         elif x_axis == 'step':
@@ -144,7 +144,7 @@ class Logger:
             if skip_none:
                 values = [v for v in values if v is not None]
             x_steps = list(range(len(values)))
-            plt.plot(x_steps, values, 'b-o', alpha=0.6)
+            plt.plot(x_steps, values, 'b-o', markersize=0.5, alpha=0.6)
             plt.xlabel(xlabel)
             plt.ylabel("Value")
             plt.title(f"Logger Data for Key: {key} (Steps)")

@@ -11,7 +11,7 @@ os.environ["QT_QPA_PLATFORM"] = "xcb"  # Qt platform plugin for X11
 
 import random
 from RL.ActorCritic import ActorCriticEligibilityTrace, ActorCriticOneStep
-from RL.ValueNetwork import SimpleValuePolicy
+from RL.ValueNetwork import SimpleValueFunction
 from RL.PolicyNetwork import GaussianPolicy
 from RL.training.common_double_integrator import *
 from RL.PPO import PPO
@@ -37,7 +37,7 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         policy_optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
 
         # Value network
-        value_net = SimpleValuePolicy(state_dim=11, hidden_dims=[64, 64])
+        value_net = SimpleValueFunction(state_dim=11, hidden_dims=[64, 64])
         value_optimizer = torch.optim.Adam(value_net.parameters(), lr=1e-3)
     elif env_name == "half_cheetah":
         env = create_half_cheetah(render_mode=render_mode)
@@ -46,7 +46,7 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         policy = create_half_cheetah_policy()
         policy_optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
         # Value network
-        value_net = SimpleValuePolicy(state_dim=17, hidden_dims=[64, 64])
+        value_net = SimpleValueFunction(state_dim=17, hidden_dims=[64, 64])
         value_optimizer = torch.optim.Adam(value_net.parameters(), lr=1e-3)
     elif env_name == "walker":
         env = create_walker(render_mode=render_mode)
@@ -55,7 +55,7 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         policy = create_walker_policy()
         policy_optimizer = torch.optim.Adam(policy.parameters(), lr=4e-4)
         # Value network
-        value_net = SimpleValuePolicy(state_dim=17, hidden_dims=[64, 64])
+        value_net = SimpleValueFunction(state_dim=17, hidden_dims=[64, 64])
         value_optimizer = torch.optim.Adam(value_net.parameters(), lr=4e-4)
 
     elif env_name == "ant":
@@ -65,7 +65,7 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         policy = create_ant_policy()
         policy_optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
         # Value network
-        value_net = SimpleValuePolicy(state_dim=105, hidden_dims=[128, 64])
+        value_net = SimpleValueFunction(state_dim=105, hidden_dims=[128, 64])
         value_optimizer = torch.optim.Adam(value_net.parameters(), lr=3e-4)
     else:
         raise ValueError(f"Unknown environment: {env_name}")
@@ -192,12 +192,6 @@ def inference_half_cheetah(file_name, render=True):
     inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
 
     env.close()
-
-def plot_log(file_name):
-    logger = Logger()
-    logger.load_from_file(f'RL/training/log/{file_name}.pkl')
-    ui = LoggerUI(logger)
-    ui.run()
 
 ############################################
 ### Walker 2d

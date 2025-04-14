@@ -7,7 +7,7 @@ import torch
 from RL.REINFORCE import REINFORCE
 from RL.Environments import DoubleIntegrator1D
 from RL.PolicyNetwork import DoubleIntegratorPolicy
-from RL.ValueNetwork import SimpleValuePolicy
+from RL.ValueNetwork import SimpleValueFunction
 import random
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -80,7 +80,7 @@ def train_baseline(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, 
     policy_optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
 
     # Value network
-    value_net = SimpleValuePolicy(state_dim=2, hidden_dims=[16, 64])
+    value_net = SimpleValueFunction(state_dim=2, hidden_dims=[16, 64])
 
     value_optimizer = torch.optim.Adam(value_net.parameters(), lr=1e-3)
 

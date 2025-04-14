@@ -13,10 +13,10 @@ import math
 import itertools
 
 class PPO:
-    def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, 
+    def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, logger,
                  total_num_steps=10000, max_steps_per_episode=1000, gamma=0.99, lambda_decay=0.95, 
                  entropy_coef=0.1, n_step_per_update=2048, batch_size=64, n_epoch=10, max_norm=0.5, epsilon=0.2, 
-                 value_func_epsilon=None, kl_threshold=None, print_info=True, logger=None):
+                 value_func_epsilon=None, kl_threshold=None, print_info=True):
         self.env = env
         self.policy = policy
         self.policy_optimizer = policy_optimizer
@@ -201,10 +201,7 @@ class PPO:
                     break 
 
             # End step loop
-
-            if step == self.max_steps_per_episode:
-                print(f"max step reached at episode {episode}")
-
+            
             G = 0
             for r in reversed(episode_rewards):
                 G = r + self.gamma * G
