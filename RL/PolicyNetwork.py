@@ -6,7 +6,8 @@ import math
 
 class ActionType(Enum):
     DISTRIBUTION=1,
-    GAUSSIAN=2
+    GAUSSIAN=2,
+    DETERMINISTIC_CONTINUOUS=3,
 
 class Policy(nn.Module):
     def __init__(self):
@@ -18,6 +19,49 @@ class Policy(nn.Module):
 
     def eval(self):
         self.training = False
+
+    def reset(self):
+        pass
+
+class DeterministicContinuousPolicy(Policy):
+    def __init__(self, state_dim, action_dim, hidden_dims):
+        super(DeterministicContinuousPolicy, self).__init__()
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.hidden_dims = hidden_dims
+
+        self.fc1 = nn.Linear(state_dim, hidden_dims[0])
+        self.fcs = nn.ModuleList()
+        for i in range(len(hidden_dims)-1):
+            self.fcs.append(nn.Linear(hidden_dims[i], hidden_dims[i+1]))
+        self.fc2 = nn.Linear(hidden_dims[-1], action_dim)
+
+        self._initialize_weights()
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        for fc in self.fcs:
+            x = torch.relu(fc(x))
+        x = self.fc2(x)
+        x = torch.tanh(x)  # Normalize the action to [-1, 1]
+        return x
+    
+    def _initialize_weights(self):
+        # Orthogonal initialization (better for RL)
+        nn.init.orthogonal_(self.fc1.weight, gain=np.sqrt(2))
+        for layer in self.fcs:
+            if isinstance(layer, nn.Linear):
+                nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
+                nn.init.constant_(layer.bias, 0.0)
+                
+        nn.init.orthogonal_(self.fc2.weight, gain=1)
+        nn.init.constant_(self.fc2.bias, 0.0)
+
+    def get_action_dim(self):
+        return self.action_dim
+
+    def get_action_type(self):
+        return ActionType.DETERMINISTIC_CONTINUOUS
 
 class DoubleIntegratorPolicy(Policy):
     def __init__(self, state_dim, action_dim, hidden_dims):
@@ -42,9 +86,6 @@ class DoubleIntegratorPolicy(Policy):
 
     def get_action_dim(self):
         return self.action_dim
-    
-    def reset(self):
-        pass
 
     def get_action_type(self):
         return ActionType.DISTRIBUTION
@@ -161,9 +202,7 @@ class GaussianPolicy(Policy):
 
     def get_action_type(self):
         return ActionType.GAUSSIAN
-    
-    def reset(self):
-        pass
+
 
 class GaussianStateDependentPolicy(Policy):
     def __init__(self, state_dim, action_dim, hidden_dims, std_hidden_dim=16,
@@ -209,7 +248,4 @@ class GaussianStateDependentPolicy(Policy):
 
     def get_action_type(self):
         return ActionType.GAUSSIAN
-    
-    def reset(self):
-        pass
     
