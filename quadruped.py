@@ -88,7 +88,7 @@ class Quadruped:
         Get the transformation matrices from body to foot tip.
         :return: List of 4 transformation matrices.
         '''
-        world = self.get_KTtree()
+        world = self.get_TFtree()
         body_frame = world['children']['body']
         names = ['FL1', 'FR1', 'RL1', 'RR1']
 
@@ -108,7 +108,7 @@ class Quadruped:
         :return: List of 4 jacobian matrices.
         '''
 
-        world = self.get_KTtree()
+        world = self.get_TFtree()
         body_frame = world['children']['body']
         leg_data = [
             ('FL', self.rotation_axes[0:3]),
@@ -168,7 +168,7 @@ class Quadruped:
         Get body Jacobians (actuated joints + unactuated joints) from all 4 legs.
         :return: Jacobians for each leg.
         '''
-        world = self.get_KTtree()
+        world = self.get_TFtree()
         body_frame = world['children']['body']
         T_b = body_frame['transform']
         
@@ -334,7 +334,7 @@ class Quadruped:
                 
         return theta_res
 
-    def get_KTtree(self):
+    def get_TFtree(self):
         """
         Build a recursive Kinematic Tree (KT) where each node has:
         {

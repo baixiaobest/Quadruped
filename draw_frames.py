@@ -100,5 +100,5 @@ if __name__=="__main__":
     joints['RR2'] = 0.3
     joints['RR3'] = -0.6
     quad.set_joint_angles(joints)
-    root = quad.get_KTtree()
+    root = quad.get_TFtree()
     draw_kinematic_tree(root)
