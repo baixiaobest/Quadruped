@@ -9,6 +9,8 @@ from matplotlib import pyplot as plt
 import numpy as np
 from RL.PolicyNetwork import DoubleIntegratorPolicy, ActionType
 from RL.Environments import DoubleIntegrator1D
+from RL.Logger import Logger
+from RL.LoggerUI import LoggerUI
 
 def visualize_policy(policy, x_range=(-10, 10), vx_range=(-5, 5), resolution=50):
     """
@@ -41,6 +43,9 @@ def visualize_policy(policy, x_range=(-10, 10), vx_range=(-5, 5), resolution=50)
                     mean, std = policy(state_tensor)
                     A[i, j] = mean.item()
                     STD[i, j] = std.item()
+                elif policy.get_action_type() == ActionType.DETERMINISTIC_CONTINUOUS:
+                    action = policy(state_tensor)
+                    A[i, j] = action.item()
     
     # Plotting the 3D surface
     fig = plt.figure()
@@ -122,6 +127,9 @@ def inference(policy, env, max_step=1000, continue_on_terminate=False, determini
                     action = action.detach().numpy()
                 else:
                     action = mean.numpy()
+                    
+            elif policy.get_action_type() == ActionType.DETERMINISTIC_CONTINUOUS:
+                action = policy.forward(state_t).detach().numpy()
 
             next_state, reward, terminated, truncated, info = env.step(action)
 
@@ -245,6 +253,9 @@ def inference_sweep(policy, seed=0, x_range=(-5, 5), v_range=(-3, 3), grid_resol
                     action = action_dist.sample()
                     action = action.detach().numpy()
 
+                elif policy.get_action_type() == ActionType.DETERMINISTIC_CONTINUOUS:
+                    action = policy.forward(state_t).detach().numpy()
+
                 state, reward, terminated, truncated, info = env.step(action)
 
                 if info:
@@ -306,3 +317,9 @@ def inference_sweep(policy, seed=0, x_range=(-5, 5), v_range=(-3, 3), grid_resol
 
     if show:
         plt.show()
+
+def plot_log(file_name):
+    logger = Logger()
+    logger.load_from_file(f'RL/training/log/{file_name}.pkl')
+    ui = LoggerUI(logger)
+    ui.run()
