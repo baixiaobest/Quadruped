@@ -1,26 +1,26 @@
 import numpy as np
 
-class DiscountedSumRunningStats:
-    def __init__(self, beta=0.99, gamma=0.99):
-        self.beta = beta  # For EMA
-        self.gamma = gamma  # For discounted sum
-
-        self.discounted_sum = 0
-        self.discounted_sum_mean = 0
-        self.var = 0
+class RunningStats:
+    def __init__(self, beta=0.95):
+        self.beta = beta
+        self.mean = 0.0
+        self.variance = 0.0
         self.count = 0
 
     def update(self, x):
-        self.discounted_sum = x + self.gamma * self.discounted_sum 
-        self.discounted_sum_mean = self.discounted_sum_mean * self.beta + (1 - self.beta) * self.discounted_sum
-        self.var = self.beta * self.var + (1 - self.beta) * (self.discounted_sum - self.discounted_sum_mean)**2
+        # Update mean
+        new_mean = self.beta * self.mean + (1 - self.beta) * x
+        # Update variance using previous mean (unbiased)
+        new_variance = self.beta * self.variance + (1 - self.beta) * (x - self.mean) ** 2
+        self.mean = new_mean
+        self.variance = new_variance
         self.count += 1
 
-    def get_std(self):
-        return np.sqrt(self.var / self.count)  # Population std
-    
     def get_mean(self):
-        return self.discounted_sum_mean
+        return self.mean 
+
+    def get_std(self):
+        return np.sqrt(self.variance + 1e-5)
     
     def get_count(self):
         return self.count
