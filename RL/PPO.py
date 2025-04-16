@@ -156,7 +156,8 @@ class PPO:
                             self.policy_optimizer.zero_grad()
                             policy_loss.backward()
                             torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_norm)
-                            policy_grad_norm = torch.nn.utils.get_total_norm(self.policy.parameters())
+                            policy_grad = [p.grad for p in self.policy.parameters() if p.grad is not None]
+                            policy_grad_norm = torch.nn.utils.get_total_norm(policy_grad)
                             self.policy_optimizer.step()
 
                             value_loss_unclipped = batched_td_error.pow(2).mean()
@@ -169,15 +170,22 @@ class PPO:
                             self.value_optimizer.zero_grad()
                             value_loss.backward()
                             torch.nn.utils.clip_grad_norm_(self.value_func.parameters(), self.max_norm)
-                            value_func_grad_norm = torch.nn.utils.get_total_norm(self.value_func.parameters())
+                            value_grad = [p.grad for p in self.value_func.parameters() if p.grad is not None]
+                            value_grad_norm = torch.nn.utils.get_total_norm(value_grad)
                             self.value_optimizer.step()
 
+                            # Logging
+                            policy_param_norm = torch.nn.utils.get_total_norm(self.policy.parameters())
+                            value_func_param_norm = torch.nn.utils.get_total_norm(self.value_func.parameters())
                             index = int(epoch * self.n_step_per_update / self.batch_size + batch_start / self.batch_size)
+
                             self.logger.log_update('policy_loss', policy_loss.item(), update_round=update_round_count, step=index)
                             self.logger.log_update('value_loss', value_loss.item(), update_round=update_round_count, step=index)
                             self.logger.log_update('policy_ratio', r.mean().item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('policy_param_norm', policy_param_norm.item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('value_param_norm', value_func_param_norm.item(), update_round=update_round_count, step=index)
                             self.logger.log_update('policy_grad_norm', policy_grad_norm.item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('value_grad_norm', value_func_grad_norm.item(), update_round=update_round_count, step=index)
+                            self.logger.log_update('value_grad_norm', value_grad_norm.item(), update_round=update_round_count, step=index)
                             self.logger.log_update('entropy', entropy.item(), update_round=update_round_count, step=index)
                             self.logger.log_update('kl_div_est_mean', kl_div_est_mean.item(), update_round=update_round_count, step=index)
                             self.logger.log_update('epoch_number', epoch, update_round=update_round_count, step=index)
