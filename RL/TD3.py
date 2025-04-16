@@ -1,8 +1,10 @@
 import sys
 import os
+from tabnanny import verbose
 # Add the parent directory (root) to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+from sympy import Q
 import torch
 import numpy as np
 from RL.Rollout import SimpleRollout
@@ -11,9 +13,10 @@ import copy
 
 class TD3:
     def __init__(self, env, policy, policy_optimizer, Q1, Q1_optimizer, Q2, Q2_optimizer, logger,
-                 n_epoch=10000, max_steps_per_episode=1000, update_after=1000, update_every=50, 
-                 eval_every=5, eval_episode=5, batch_size=64, replay_buffer_size=1e6, policy_delay=2, gamma=0.99, polyak=0.995, 
-                 action_noise=0.2, target_noise=0.2, noise_clip=0.5):
+                 n_epoch=10000, max_steps_per_episode=1000, init_buffer_size=1000, update_every=50, 
+                 eval_every=10, eval_episode=1, batch_size=100, replay_buffer_size=1e6, policy_delay=2, gamma=0.99, polyak=0.995, 
+                 action_noise=0.2, target_noise=0.2, noise_clip=0.5, true_q_estimate_every=-1, true_q_estimate_episode=100,
+                 verbose_logging=False):
         """
         Initialize the Twin Delayed Deep Deterministic Policy Gradient (TD3) agent.
         
@@ -29,7 +32,7 @@ class TD3:
             
             n_epoch (int): Total number of training epochs
             max_steps_per_episode (int): Maximum number of steps per episode before termination
-            update_after (int): Number of env steps to take before starting to update networks
+            init_buffer_size (int): Number of env steps to take before starting to update networks
             update_every (int): Number of env steps between network update rounds
             eval_every (int): Number of training epochs between evaluation runs
             batch_size (int): Size of minibatch sampled from replay buffer for updates
@@ -40,6 +43,7 @@ class TD3:
             action_noise (float): Standard deviation of noise added to actions during training
             target_noise (float): Standard deviation of noise added to target actions
             noise_clip (float): Maximum absolute value of target policy noise
+            true_q_estimate_every (int): Number of epochs between true Q-value estimates. This is for debugging purposes.
         """
         self.env = env
         self.policy = policy
@@ -51,7 +55,7 @@ class TD3:
         self.logger = logger
         self.n_epoch = n_epoch
         self.max_steps_per_episode = max_steps_per_episode
-        self.update_after = update_after
+        self.init_buffer_size = init_buffer_size
         self.update_every = update_every
         self.eval_every = eval_every
         self.eval_episode = eval_episode
@@ -63,6 +67,9 @@ class TD3:
         self.action_noise = action_noise
         self.target_noise = target_noise
         self.noise_clip = noise_clip
+        self.true_q_estimate_every = true_q_estimate_every
+        self.true_q_estimate_episode = true_q_estimate_episode
+        self.verbose_logging = verbose_logging
 
         self.max_grad_norm = 0.5
 
@@ -87,7 +94,7 @@ class TD3:
 
         simple_rollout = SimpleRollout(self.env)
         initial_rollout = simple_rollout.rollout(
-            num_steps=self.update_after,
+            num_steps=self.init_buffer_size,
             policy=uniform_policy,
             max_steps_per_episode=self.max_steps_per_episode)
         self.replay_buffer.add_list(initial_rollout)
@@ -120,21 +127,47 @@ class TD3:
             ).detach()
             target = rewards + (1-dones) * self.gamma * min_Q_target
 
-            # Q functions update
-            Q1_loss = torch.nn.functional.mse_loss(self.Q1(states, actions), target)
+            # Q1 function update
+            Q1_values = self.Q1(states, actions)
+            Q1_td_error = target - Q1_values
+            Q1_loss = Q1_td_error.pow(2).mean()
+
             self.Q1_optimizer.zero_grad()
             Q1_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.Q1.parameters(), self.max_grad_norm)
+            q1_grads = [p.grad for p in self.Q1.parameters() if p.grad is not None]
+            q1_grads_norm = torch.nn.utils.get_total_norm(q1_grads)
             self.Q1_optimizer.step()
 
-            Q2_loss = torch.nn.functional.mse_loss(self.Q2(states, actions), target)
+            # Q2 function update
+            Q2_values = self.Q2(states, actions)
+            Q2_td_error = target - Q2_values
+            Q2_loss = Q2_td_error.pow(2).mean()
+
             self.Q2_optimizer.zero_grad()
             Q2_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.Q2.parameters(), self.max_grad_norm)
+            q2_grads = [p.grad for p in self.Q2.parameters() if p.grad is not None]
+            q2_grads_norm = torch.nn.utils.get_total_norm(q2_grads)
             self.Q2_optimizer.step()
 
+            # Logging
+
+            Q1_parameters_norm = torch.nn.utils.get_total_norm(self.Q1.parameters())
+            Q2_parameters_norm = torch.nn.utils.get_total_norm(self.Q2.parameters())
             self.logger.log_update('Q1_loss', [Q1_loss.item()], update_round=epoch)
             self.logger.log_update('Q2_loss', [Q2_loss.item()], update_round=epoch)
+            self.logger.log_update('Q1_param_norm', [Q1_parameters_norm], update_round=epoch)
+            self.logger.log_update('Q2_param_norm', [Q2_parameters_norm], update_round=epoch)
+            self.logger.log_update('Q1_grad_norm', [q1_grads_norm], update_round=epoch)
+            self.logger.log_update('Q2_grad_norm', [q2_grads_norm], update_round=epoch)
+            # This is a lot of data, so we log it only if verbose_logging is enabled
+            if self.verbose_logging:
+                self.logger.log_update('targets', list(target.numpy()), update_round=epoch)
+                self.logger.log_update('Q1_td_errors', list(Q1_td_error.detach().numpy()), update_round=epoch)
+                self.logger.log_update('Q2_td_errors', list(Q2_td_error.detach().numpy()), update_round=epoch)
+                self.logger.log_update('Q1_values', list(Q1_values.detach().numpy()), update_round=epoch)
+                self.logger.log_update('Q2_values', list(Q2_values.detach().numpy()), update_round=epoch)
 
             # Delay policy updates
             if epoch > 0 and epoch % self.policy_delay == 0:
@@ -143,6 +176,8 @@ class TD3:
                 self.policy_optimizer.zero_grad()
                 policy_loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+                policy_grad = [p.grad for p in self.policy.parameters() if p.grad is not None]
+                policy_grad_norm = torch.nn.utils.get_total_norm(policy_grad)
                 self.policy_optimizer.step()
                 self._set_network_grad(self.Q1, True)
 
@@ -156,7 +191,11 @@ class TD3:
                 for target_param, param in zip(self.policy_target.parameters(), self.policy.parameters()):
                     target_param.data.copy_((1 - self.polyak) * param.data + self.polyak * target_param.data)
                 
+                # Logging
+                policy_parameters_norm = torch.nn.utils.get_total_norm(self.policy.parameters())
                 self.logger.log_update('policy_loss', [policy_loss.item()], update_round=epoch)
+                self.logger.log_update('policy_param_norm', [policy_parameters_norm], update_round=epoch)
+                self.logger.log_update('policy_grad_norm', [policy_grad_norm], update_round=epoch)
 
             # Evaluate the policy every eval_every epochs
             if epoch % self.eval_every == 0:
@@ -171,6 +210,23 @@ class TD3:
                 self.logger.log_update('eval_episode_length', [episode_length], update_round=epoch)
 
                 print(f"Epoch: {epoch}, return: {eval_mean_return:.2f}, episode length: {episode_length:.2f}")
+            
+            # Debugging: Comparing Q-values with true Q-values
+            if self.true_q_estimate_every > 0 and epoch > 0 and epoch % self.true_q_estimate_every == 0:
+                # Get the estimated Q-values using the current policy
+                state, _ = self.env.reset()
+                a = self.policy(torch.tensor(state, dtype=torch.float32))
+                q_value_1 = self.Q1(torch.tensor(state, dtype=torch.float32), a)
+                q_value_2 = self.Q2(torch.tensor(state, dtype=torch.float32), a)
+                # Estimate true Q-values using the current policy, by rolling out true_q_estimate_episode episodes
+                true_q_estimate, _ = simple_rollout.eval_rollout(
+                    n_episode=self.true_q_estimate_episode,
+                    policy=self.policy,
+                    max_steps_per_episode=self.max_steps_per_episode,
+                    gamma=self.gamma)
+                self.logger.log_update('debug_true_q_estimate', [true_q_estimate], update_round=epoch)
+                self.logger.log_update('debug_q_value_1', [q_value_1.detach().numpy()], update_round=epoch)
+                self.logger.log_update('debug_q_value_2', [q_value_2.detach().numpy()], update_round=epoch)
 
 
     def _create_gaussian_noise_policy(self, policy, noise_scale, noise_clip=None):
