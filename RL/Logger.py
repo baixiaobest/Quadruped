@@ -14,14 +14,39 @@ class Logger:
         self.key_type_map = {}  # Maps each key to KeyType
         self.episodes = set()  # Track all episodes for EPISODE keys
         self.update_rounds = set()  # Track all update rounds for UPDATE keys
+        self.episode_offset = 0  # Offset for episode numbers
+        self.update_round_offset = 0  # Offset for update rounds
 
     def log_episode(self, key, value, episode, step=None):
         """Log data for an episode-type key."""
+        episode = episode + self.episode_offset
         self._log(key, value, KeyType.EPISODE, identifier=episode, step=step)
 
     def log_update(self, key, value, update_round, step=None):
         """Log data for an update-type key."""
-        self._log(key, value, KeyType.UPDATE, identifier=update_round, step=step)
+        update_round = update_round + self.update_round_offset
+        self._log(key, value, KeyType.UPDATE, identifier=update_round, step=step)\
+        
+    def get_max_episode(self):
+        """Get the maximum episode number."""
+        max_episode = 0
+        for identifier in self.episodes:
+            max_episode = max(max_episode, identifier)
+        return max_episode
+    
+    def get_max_update_round(self):
+        max_update_round = 0
+        for identifier in self.update_rounds:
+            max_update_round = max(max_update_round, identifier)
+        return max_update_round
+    
+    def set_episode_offset(self, offset):
+        """Set the offset for episode numbers."""
+        self.episode_offset = offset
+    
+    def set_update_round_offset(self, offset):
+        """Set the offset for update rounds."""
+        self.update_round_offset = offset
 
     def _log(self, key, value, key_type, identifier, step=None):
         # Check key type consistency

@@ -19,7 +19,7 @@ import gymnasium as gym
 import torch
 import random
 
-def train(load, seed, file_name, algorithm_name="td3", start_policy_name=None, num_epoch=1000, 
+def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_name=None, num_epoch=1000, 
           env_name="inverted_pendulum", max_steps_per_episode=500, show=True, render=True, verbose_logging=False):
     
     random.seed(seed)
@@ -43,22 +43,42 @@ def train(load, seed, file_name, algorithm_name="td3", start_policy_name=None, n
         state_dim = 17
         action_dim = 6
     elif env_name=="hopper":
-        env = gym.make("Hopper-v5", render_mode=render_mode)
+        env = gym.make("Hopper-v5", 
+                       render_mode=render_mode,
+                       jump_reward_weight=0.2)
         state_dim = 11
         action_dim = 3
     else:
         raise ValueError(f"Unsupported environment: {env_name}")
 
     logger = Logger()
+    init_policy = 'uniform'
+    if load:
+        init_policy = 'current'
+
+    def get_eval_callback():
+        max_val = 180
+        def eval_callback(epoch, R, policy, Q1, Q2):
+            nonlocal max_val
+            if epoch > 0 and R > max_val + 10:
+                print("saving model")
+                max_val = R
+                # Save the policy
+                torch.save(policy.state_dict(), f'RL/training/models/{file_name}_R{R:.0f}.pth')
+
+                # Save the Q value network
+                torch.save(Q1.state_dict(), f'RL/training/value_models/{file_name}_R{R:.0f}_Q1.pth')
+                torch.save(Q2.state_dict(), f'RL/training/value_models/{file_name}_R{R:.0f}_Q2.pth')
+        return eval_callback
 
     algorithm = None
     if algorithm_name == "td3":
         policy = create_policy(state_dim, action_dim)
-        policy_optimizer = torch.optim.Adam(policy.parameters(), lr=1e-4)
-        Q1 = SimpleQFunction(state_dim, action_dim, hidden_dims=[128, 128])
-        Q1_optimizer = torch.optim.Adam(Q1.parameters(), lr=1e-3)
-        Q2 = SimpleQFunction(state_dim, action_dim, hidden_dims=[128, 128])
-        Q2_optimizer = torch.optim.Adam(Q2.parameters(), lr=1e-3)
+        policy_optimizer = torch.optim.Adam(policy.parameters(), lr=5e-4)
+        Q1 = SimpleQFunction(state_dim, action_dim, hidden_dims=[64, 64])
+        Q1_optimizer = torch.optim.Adam(Q1.parameters(), lr=5e-4)
+        Q2 = SimpleQFunction(state_dim, action_dim, hidden_dims=[64, 64])
+        Q2_optimizer = torch.optim.Adam(Q2.parameters(), lr=5e-4)
 
         algorithm = TD3(
             env, 
@@ -71,40 +91,55 @@ def train(load, seed, file_name, algorithm_name="td3", start_policy_name=None, n
             logger,
             n_epoch=num_epoch, 
             max_steps_per_episode=max_steps_per_episode, 
-            init_buffer_size=10_000, 
+            init_buffer_size=50_000, 
+            init_policy=init_policy,
             update_every=50, 
             eval_every=50, 
-            eval_episode=1, 
+            eval_episode=5, 
             batch_size=300, 
             replay_buffer_size=1e6, 
             policy_delay=2, 
             gamma=0.99, 
             polyak=0.995, 
-            action_noise=0.2, 
-            target_noise=0.1, 
-            noise_clip=0.2,
+            action_noise_config={
+                'type': 'OU',
+                'theta': 0.15,
+                'sigma': 0.2,
+                'dt': 2e-3,
+                'noise_clip': 0.3,
+            }, 
+            # action_noise_config={
+            #     'type': 'gaussian',
+            #     'sigma': 0.2,
+            #     'noise_clip': 0.4,
+            # }, 
+            target_noise=0.2, 
+            eval_callback=get_eval_callback(),
             true_q_estimate_every=2000,
             true_q_estimate_episode=50,
             verbose_logging=verbose_logging)
     
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm_name}")
+    
 
     if load:
         if start_policy_name:
             policy.load_state_dict(torch.load(f'RL/training/models/{start_policy_name}.pth'))
             Q1.load_state_dict(torch.load(f'RL/training/value_models/{start_policy_name}_Q1.pth'))
             Q2.load_state_dict(torch.load(f'RL/training/value_models/{start_policy_name}_Q2.pth'))
-            logger.load_from_file(f'RL/training/log/{start_policy_name}.pkl')
-            logger.set_episode_offset(logger.get_max_episode() + 1)
-            logger.set_update_round_offset(logger.get_max_update_round() + 1)
+            if load_log:
+                logger.load_from_file(f'RL/training/log/{start_policy_name}.pkl')
+                logger.set_episode_offset(logger.get_max_episode() + 1)
+                logger.set_update_round_offset(logger.get_max_update_round() + 1)
         else:
             policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
             Q1.load_state_dict(torch.load(f'RL/training/value_models/{file_name}_Q1.pth'))
             Q2.load_state_dict(torch.load(f'RL/training/value_models/{file_name}_Q2.pth'))
-            logger.load_from_file(f'RL/training/log/{file_name}.pkl')
-            logger.set_episode_offset(logger.get_max_episode() + 1)
-            logger.set_update_round_offset(logger.get_max_update_round() + 1)
+            if load_log:
+                logger.load_from_file(f'RL/training/log/{file_name}.pkl')
+                logger.set_episode_offset(logger.get_max_episode() + 1)
+                logger.set_update_round_offset(logger.get_max_update_round() + 1)
 
     algorithm.train()
     env.close()
@@ -183,8 +218,8 @@ if __name__=="__main__":
 
     # Inverted pendulum
 
-    # train(load=False, seed=0, file_name="td3_inverted_pendulum", algorithm_name="td3", start_policy_name=None, 
-    #       num_epoch=26_000, show=True, render=True)
+    # train(load=False, load_log=False, seed=7846, file_name="td3_inverted_pendulum", algorithm_name="td3", start_policy_name=None, 
+    #       env_name="inverted_pendulum", num_epoch=30_000, max_steps_per_episode=200, show=True, render=True)
     
     # plot_log(file_name="td3_inverted_pendulum")
 
@@ -193,7 +228,7 @@ if __name__=="__main__":
     # Half cheetah
 
     # train(load=False, seed=546221, file_name="td3_half_cheetah", algorithm_name="td3", start_policy_name=None, 
-    #       env_name="half_cheetah", num_epoch=10_000, max_steps_per_episode=200, show=True, render=True)
+    #       env_name="half_cheetah", num_epoch=100_000, max_steps_per_episode=200, show=True, render=True)
     
     # inference_half_cheetah(file_name="td3_half_cheetah", render=True)
 
@@ -201,9 +236,9 @@ if __name__=="__main__":
 
     # Hopper
 
-    train(load=False, seed=54587, file_name="td3_hopper", algorithm_name="td3", start_policy_name=None,
-          env_name="hopper", num_epoch=10_000, max_steps_per_episode=300, show=True, render=True, 
-          verbose_logging=True)
+    # train(load=True, load_log=False, seed=53587, file_name="td3_hopper", algorithm_name="td3", 
+    #       start_policy_name="td3_hopper_R232", env_name="hopper", num_epoch=20_000, max_steps_per_episode=500, 
+    #       show=True, render=True, verbose_logging=False)
     
     # inference_hopper(file_name="td3_hopper", render=True)
 
