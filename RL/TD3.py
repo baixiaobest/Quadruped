@@ -9,14 +9,18 @@ import torch
 import numpy as np
 from RL.Rollout import SimpleRollout
 from RL.ReplayBuffer import ReplayBuffer
+from RL.OUNoise import OUNoise
 import copy
+import numpy as np
 
 class TD3:
     def __init__(self, env, policy, policy_optimizer, Q1, Q1_optimizer, Q2, Q2_optimizer, logger,
-                 n_epoch=10000, max_steps_per_episode=1000, init_buffer_size=1000, update_every=50, 
+                 n_epoch=10000, max_steps_per_episode=1000, init_buffer_size=1000, init_policy='uniform', update_every=50, 
                  eval_every=10, eval_episode=1, batch_size=100, replay_buffer_size=1e6, policy_delay=2, gamma=0.99, polyak=0.995, 
-                 action_noise=0.2, target_noise=0.2, noise_clip=0.5, true_q_estimate_every=-1, true_q_estimate_episode=100,
-                 verbose_logging=False):
+                 action_noise_config={'type': 'gaussian', 'sigma': 0.2, 'noise_clip': 0.2}, 
+                 target_noise=0.2, target_noise_clip=0.2, eval_callback=None,
+                 # Debug
+                 true_q_estimate_every=-1, true_q_estimate_episode=100,verbose_logging=False):
         """
         Initialize the Twin Delayed Deep Deterministic Policy Gradient (TD3) agent.
         
@@ -40,8 +44,11 @@ class TD3:
             policy_delay (int): Number of critic updates per actor update
             gamma (float): Discount factor for future rewards (0,1)
             polyak (float): Interpolation factor for target network updates (0,1)
-            action_noise (float): Standard deviation of noise added to actions during training
+            action_noise_config (float): configuration for action noise. There are two types, gaussian and OU noise.
+                Gaussian Noise example: {'type': 'gaussian', 'sigma': 0.2, 'noise_clip': 0.2}
+                OU Noise example: {'type': 'OU', 'sigma': 0.2, 'dt': 0.002, 'theta': 0.15, 'noise_clip': 0.2}
             target_noise (float): Standard deviation of noise added to target actions
+            target_noise_clip (float): Maximum absolute value of target policy noise
             noise_clip (float): Maximum absolute value of target policy noise
             true_q_estimate_every (int): Number of epochs between true Q-value estimates. This is for debugging purposes.
         """
@@ -56,6 +63,7 @@ class TD3:
         self.n_epoch = n_epoch
         self.max_steps_per_episode = max_steps_per_episode
         self.init_buffer_size = init_buffer_size
+        self.init_policy = init_policy
         self.update_every = update_every
         self.eval_every = eval_every
         self.eval_episode = eval_episode
@@ -64,9 +72,10 @@ class TD3:
         self.policy_delay = policy_delay
         self.gamma = gamma
         self.polyak = polyak
-        self.action_noise = action_noise
+        self.action_noise_config = action_noise_config
         self.target_noise = target_noise
-        self.noise_clip = noise_clip
+        self.target_noise_clip = target_noise_clip
+        self.eval_callback = eval_callback
         self.true_q_estimate_every = true_q_estimate_every
         self.true_q_estimate_episode = true_q_estimate_episode
         self.verbose_logging = verbose_logging
@@ -93,10 +102,16 @@ class TD3:
         uniform_policy = self._create_uniform_policy(action_dim)
 
         simple_rollout = SimpleRollout(self.env)
-        initial_rollout = simple_rollout.rollout(
-            num_steps=self.init_buffer_size,
-            policy=uniform_policy,
-            max_steps_per_episode=self.max_steps_per_episode)
+        if self.init_policy == 'uniform':
+            initial_rollout = simple_rollout.rollout(
+                num_steps=self.init_buffer_size,
+                policy=uniform_policy,
+                max_steps_per_episode=self.max_steps_per_episode)
+        elif self.init_policy == 'current':
+            initial_rollout = simple_rollout.rollout(
+                num_steps=self.init_buffer_size,
+                policy=self._get_noisy_rollout_policy(action_dim),
+                max_steps_per_episode=self.max_steps_per_episode)
         self.replay_buffer.add_list(initial_rollout)
 
         self.policy.train()
@@ -105,11 +120,11 @@ class TD3:
 
         for epoch in range(self.n_epoch):
             # Interact with the environment using current policy
-            noisy_rollout_policy = self._create_gaussian_noise_policy(self.policy, self.action_noise, None)
+            noisy_rollout_policy = self._get_noisy_rollout_policy(action_dim)
             self.replay_buffer.add_list(
                 simple_rollout.rollout(num_steps=self.update_every, 
-                                policy=noisy_rollout_policy, 
-                                max_steps_per_episode=self.max_steps_per_episode))
+                                       policy=noisy_rollout_policy, 
+                                       max_steps_per_episode=self.max_steps_per_episode))
 
             # Sample a batch of transitions
             batch = self.replay_buffer.sample(self.batch_size)
@@ -120,7 +135,7 @@ class TD3:
             dones = torch.tensor(np.array([transition['done'] for transition in batch]), dtype=torch.float32)
 
             # Compute target with target policy noise for smoothing
-            target_policy_noise = self._create_gaussian_noise_policy(self.policy_target, self.target_noise, self.noise_clip)
+            target_policy_noise = self._create_gaussian_noise_policy(self.policy_target, self.target_noise, self.target_noise_clip)
             min_Q_target = torch.min(
                 self.Q_target_1(next_states, target_policy_noise(next_states)), 
                 self.Q_target_2(next_states, target_policy_noise(next_states))
@@ -168,6 +183,12 @@ class TD3:
                 self.logger.log_update('Q2_td_errors', list(Q2_td_error.detach().numpy()), update_round=epoch)
                 self.logger.log_update('Q1_values', list(Q1_values.detach().numpy()), update_round=epoch)
                 self.logger.log_update('Q2_values', list(Q2_values.detach().numpy()), update_round=epoch)
+            else:
+                self.logger.log_update('targets_mean', [target.mean().item()], update_round=epoch)
+                self.logger.log_update('Q1_td_errors_mean', [Q1_td_error.mean().item()], update_round=epoch)
+                self.logger.log_update('Q2_td_errors_mean', [Q2_td_error.mean().item()], update_round=epoch)
+                self.logger.log_update('Q1_values_mean', [Q1_values.mean().item()], update_round=epoch)
+                self.logger.log_update('Q2_values_mean', [Q2_values.mean().item()], update_round=epoch)
 
             # Delay policy updates
             if epoch > 0 and epoch % self.policy_delay == 0:
@@ -206,6 +227,10 @@ class TD3:
                     gamma=self.gamma)
                 eval_mean_return = np.mean(episode_returns)
                 episode_length = np.mean(episode_length)
+
+                if self.eval_callback:
+                    self.eval_callback(epoch, eval_mean_return, self.policy, self.Q1, self.Q2)
+
                 self.logger.log_update('eval_return', [eval_mean_return], update_round=epoch)
                 self.logger.log_update('eval_episode_length', [episode_length], update_round=epoch)
 
@@ -224,10 +249,27 @@ class TD3:
                     policy=self.policy,
                     max_steps_per_episode=self.max_steps_per_episode,
                     gamma=self.gamma)
+
                 self.logger.log_update('debug_true_q_estimate', [true_q_estimate], update_round=epoch)
                 self.logger.log_update('debug_q_value_1', [q_value_1.detach().numpy()], update_round=epoch)
                 self.logger.log_update('debug_q_value_2', [q_value_2.detach().numpy()], update_round=epoch)
 
+    def _get_noisy_rollout_policy(self, action_dim):
+        if self.action_noise_config['type'] == 'gaussian':
+            return self._create_gaussian_noise_policy(\
+                self.policy, 
+                self.action_noise_config['sigma'], 
+                self.action_noise_config['noise_clip'])
+        elif self.action_noise_config['type'] == 'OU':
+            return self._create_OU_noise_policy(\
+                self.policy, 
+                action_dim=action_dim,
+                noise_scale=self.action_noise_config['sigma'],
+                dt=self.action_noise_config['dt'],
+                theta=self.action_noise_config['theta'],
+                noise_clip=self.action_noise_config['noise_clip'])
+        else:
+            raise ValueError(f"Unsupported action noise type: {self.action_noise_config['type']}")
 
     def _create_gaussian_noise_policy(self, policy, noise_scale, noise_clip=None):
         """Create a noisy version of the policy for exploration."""
@@ -241,6 +283,23 @@ class TD3:
             noisy_action_t = torch.clamp(noisy_action_t, -1, 1)
             return noisy_action_t
         return noisy_policy
+    
+    def _create_OU_noise_policy(self, policy, action_dim, noise_scale=0.2, dt=0.01, theta=0.15, noise_clip=None):
+        """Create an Ornstein-Uhlenbeck noise policy for exploration."""
+        ou_noise = OUNoise(theta=theta, mu=np.zeros(action_dim), sigma=noise_scale, dt=dt)
+
+        def ou_policy(state):
+            state_t = torch.tensor(state, dtype=torch.float32)
+            action_t = policy(state_t)
+            noise = ou_noise.sample()
+            if noise_clip is not None:
+                noise = np.clip(noise, -noise_clip, noise_clip)
+                ou_noise.set_noise(noise)
+            noise_t = torch.tensor(noise, dtype=torch.float32)
+            noisy_action_t = action_t + noise_t
+            noisy_action_t = torch.clamp(noisy_action_t, -1, 1)
+            return noisy_action_t
+        return ou_policy
     
     def _create_uniform_policy(self, action_dim):
         """Create a uniform policy for exploration."""
