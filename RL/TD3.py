@@ -18,9 +18,12 @@ class TD3:
                  n_epoch=10000, max_steps_per_episode=1000, init_buffer_size=1000, init_policy='uniform', update_every=50, 
                  eval_every=10, eval_episode=1, batch_size=100, replay_buffer_size=1e6, policy_delay=2, gamma=0.99, polyak=0.995, 
                  action_noise_config={'type': 'gaussian', 'sigma': 0.2, 'noise_clip': 0.2}, 
-                 target_noise=0.2, target_noise_clip=0.2, eval_callback=None,
+                 target_noise=0.2, target_noise_clip=0.2,
                  # Debug
-                 true_q_estimate_every=-1, true_q_estimate_episode=100,verbose_logging=False):
+                 eval_callback=None, true_q_estimate_every=-1, 
+                 true_q_estimate_episode=100, verbose_logging=False, 
+                 # Visualization
+                 visualize_every=1000, visualize_env=None):
         """
         Initialize the Twin Delayed Deep Deterministic Policy Gradient (TD3) agent.
         
@@ -51,6 +54,8 @@ class TD3:
             target_noise_clip (float): Maximum absolute value of target policy noise
             noise_clip (float): Maximum absolute value of target policy noise
             true_q_estimate_every (int): Number of epochs between true Q-value estimates. This is for debugging purposes.
+            visualize_every (int): Number of epochs between visualizations of the policy
+            visualize_env: Environment for visualization. If None, no visualization is performed.
         """
         self.env = env
         self.policy = policy
@@ -79,6 +84,8 @@ class TD3:
         self.true_q_estimate_every = true_q_estimate_every
         self.true_q_estimate_episode = true_q_estimate_episode
         self.verbose_logging = verbose_logging
+        self.visualize_every = visualize_every
+        self.visualize_env = visualize_env
 
         self.max_grad_norm = 0.5
 
@@ -253,6 +260,16 @@ class TD3:
                 self.logger.log_update('debug_true_q_estimate', [true_q_estimate], update_round=epoch)
                 self.logger.log_update('debug_q_value_1', [q_value_1.detach().numpy()], update_round=epoch)
                 self.logger.log_update('debug_q_value_2', [q_value_2.detach().numpy()], update_round=epoch)
+
+            # Visualization
+            if self.visualize_env is not None and \
+                self.visualize_every > 0 and epoch % self.visualize_every == 0:
+                visualize_rollout = SimpleRollout(self.visualize_env)
+                visualize_rollout.eval_rollout(
+                    n_episode=1, 
+                    policy=self.policy, 
+                    max_steps_per_episode=self.max_steps_per_episode, 
+                    gamma=self.gamma)
 
     def _get_noisy_rollout_policy(self, action_dim):
         if self.action_noise_config['type'] == 'gaussian':

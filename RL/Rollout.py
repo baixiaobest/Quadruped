@@ -3,7 +3,9 @@ import os
 # Add the parent directory (root) to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+from numpy import std
 import torch
+from RL.PolicyNetwork import ActionType
 
 class SimpleRollout:
     def __init__(self, env) -> None:
@@ -16,18 +18,35 @@ class SimpleRollout:
         steps_in_episode = 0
 
         for steps in range(num_steps):
+
             state_t = torch.tensor(state, dtype=torch.float32)
-            action = policy(state_t).detach().numpy()
+            if policy.get_action_type() == ActionType.DETERMINISTIC_CONTINUOUS:
+                action = policy(state_t).detach().numpy()
+            elif policy.get_action_type() == ActionType.GAUSSIAN:
+                mean, std = policy(state_t)
+                action_dist = torch.distributions.Normal(mean, std)
+                action = action_dist.sample()
+                action_log_prob = action_dist.log_prob(action).sum(dim=-1)
+                action = action.detach().numpy()
+
             next_state, reward, terminated, truncated, info = self.env.step(action)
             done = terminated or truncated
 
-            transitions.append({
+            curr_transition = {
                 'state': state,
                 'action': action,
                 'reward': reward,
                 'next_state': next_state,
                 'done': done
-            })
+            }
+
+            # Gaussian policy has additional information
+            if policy.get_action_type() == ActionType.GAUSSIAN:
+                curr_transition['action_log_prob'] = action_log_prob
+                curr_transition['mean'] = mean
+                curr_transition['std'] = std
+
+            transitions.append(curr_transition)
 
             steps_in_episode += 1
 
@@ -44,11 +63,20 @@ class SimpleRollout:
         episode_length = []
 
         for episode in range(n_episode):
+
             state, _ = self.env.reset()
             rewards = []
             for step in range(max_steps_per_episode):
+
                 state_t = torch.tensor(state, dtype=torch.float32)
-                action = policy(state_t).detach().numpy()
+                if policy.get_action_type() == ActionType.DETERMINISTIC_CONTINUOUS:
+                    action = policy(state_t).detach().numpy()
+                elif policy.get_action_type() == ActionType.GAUSSIAN:
+                    mean, std = policy(state_t)
+                    action_dist = torch.distributions.Normal(mean, std)
+                    action = action_dist.sample()
+                    action = action.detach().numpy()
+
                 next_state, reward, terminated, truncated, info = self.env.step(action)
                 done = terminated or truncated
 

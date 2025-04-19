@@ -29,8 +29,10 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
     render_mode = 'human' if render else None
     logger = Logger()
 
+    visualize_env = None
     if env_name == "hopper":
         env = create_hopper(render_mode=render_mode)
+        visualize_env = create_hopper(render_mode='human')
 
         # Policy network and optimizer
         policy = create_hopper_policy(policy_type)
@@ -41,6 +43,7 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         value_optimizer = torch.optim.Adam(value_net.parameters(), lr=1e-3)
     elif env_name == "half_cheetah":
         env = create_half_cheetah(render_mode=render_mode)
+        visualize_env = create_half_cheetah(render_mode='human')
 
         # Policy network and optimizer
         policy = create_half_cheetah_policy()
@@ -50,6 +53,7 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         value_optimizer = torch.optim.Adam(value_net.parameters(), lr=1e-3)
     elif env_name == "walker":
         env = create_walker(render_mode=render_mode)
+        visualize_env = create_walker(render_mode='human')
 
         # Policy network and optimizer
         policy = create_walker_policy()
@@ -60,6 +64,7 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
 
     elif env_name == "ant":
         env = create_ant(render_mode=render_mode)
+        visualize_env = create_ant(render_mode='human')
 
         # Policy network and optimizer
         policy = create_ant_policy()
@@ -74,9 +79,15 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         if start_policy_name:
             policy.load_state_dict(torch.load(f'RL/training/models/{start_policy_name}.pth'))
             value_net.load_state_dict(torch.load(f'RL/training/value_models/{start_policy_name}.pth'))
+            logger.load_from_file(f'RL/training/log/{start_policy_name}.pkl')
+            logger.set_episode_offset(logger.get_max_episode() + 1)
+            logger.set_update_round_offset(logger.get_max_update_round() + 1)
         else:
             policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
             value_net.load_state_dict(torch.load(f'RL/training/value_models/{file_name}.pth'))
+            logger.load_from_file(f'RL/training/log/{file_name}.pkl')
+            logger.set_episode_offset(logger.get_max_episode() + 1)
+            logger.set_update_round_offset(logger.get_max_update_round() + 1)
 
     if set_policy_std and set_policy_std > 0 and isinstance(policy, GaussianPolicy):
         policy.set_std(set_policy_std)
@@ -98,10 +109,14 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         epsilon=0.2,
         value_func_epsilon=None,
         kl_threshold=0.1,
-        logger=logger)
+        logger=logger,
+        visualize_every=10,
+        visualize_env=visualize_env)
 
     algorithm.train()
     env.close()
+    if visualize_env:
+        visualize_env.close()
 
     # Save the policy
     torch.save(policy.state_dict(), f'RL/training/models/{file_name}.pth')
@@ -329,9 +344,9 @@ def inference_sb_PPO(env_name="walker"):
     render_env.close()
 
 if __name__=='__main__':
-    #  train(load=False, seed=64665, file_name="hopper_ppo_gaussian", 
-    #       env_name="hopper", policy_type='gaussian', num_steps=5000, max_steps_per_episode=500, set_policy_std=0.4, 
-    #       entropy_coef=0.02, show=True, render=True)
+     train(load=False, seed=64665, file_name="hopper_ppo_gaussian", 
+          env_name="hopper", policy_type='gaussian', num_steps=1_000_000, max_steps_per_episode=500, set_policy_std=0.4, 
+          entropy_coef=0.02, show=True, render=False)
      
     #  plot_log(file_name="hopper_ppo_gaussian")
     
@@ -339,17 +354,17 @@ if __name__=='__main__':
     #       start_policy_name="hopper_ppo_gaussian_best2", 
     #       num_steps=5000, max_steps_per_episode=500, set_policy_std=None, entropy_coef=0.01, show=True, render=True)
 
-    # inference_hopper(file_name="hopper_ppo_gaussian", policy_type='gaussian', render=True)
+    # inference_hopper(file_name="hopper_ppo_gaussian_best", policy_type='gaussian', render=True)
 
     # Half Cheetah
 
-    train(load=False, seed=6335, file_name="half_cheetah_ppo_gaussian", 
-          env_name="half_cheetah", num_steps=50000, max_steps_per_episode=500,
-          set_policy_std=None, entropy_coef=0.02, show=True, render=True)
+    # train(load=False, seed=6335, file_name="half_cheetah_ppo_gaussian", 
+    #       env_name="half_cheetah", num_steps=5_000_000, max_steps_per_episode=200,
+    #       set_policy_std=None, entropy_coef=0.02, show=True, render=True)
     
-    # inference_half_cheetah(file_name="half_cheetah_ppo_gaussian")
+    # inference_half_cheetah(file_name="half_cheetah_ppo_gaussian_5M_samples")
 
-    # plot_log(file_name="half_cheetah_ppo_gaussian")
+    # plot_log(file_name="half_cheetah_ppo_gaussian_5M_samples")
 
     # Walker 2d
     # train(load=False, seed=23795, file_name="walker_ppo_gaussian",

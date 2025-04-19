@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 import torch
 from RL.GradientOperators import GradientOperator as GO
 from RL.PolicyNetwork import ActionType
+from RL.Rollout import SimpleRollout
 import numpy as np
 import random
 from RL.RunningStats import RunningStats
@@ -16,12 +17,60 @@ class PPO:
     def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, logger,
                  total_num_steps=10000, max_steps_per_episode=1000, gamma=0.99, lambda_decay=0.95, 
                  entropy_coef=0.1, n_step_per_update=2048, batch_size=64, n_epoch=10, max_norm=0.5, epsilon=0.2, 
-                 value_func_epsilon=None, kl_threshold=None, print_info=True):
+                 value_func_epsilon=None, kl_threshold=None, visualize_every=10, visualize_env=None):
+        """
+        Initialize the Proximal Policy Optimization (PPO) algorithm.
+        This implementation includes features like Generalized Advantage Estimation (GAE),
+        policy clipping, and  optionalvalue function clipping and KL divergence thresholding.
+        Parameters
+        ----------
+        env : gym.Env
+            The environment to train on
+        policy : nn.Module or similar
+            The policy network that maps states to action distributions
+        policy_optimizer : torch.optim.Optimizer
+            Optimizer for the policy network
+        value_func : nn.Module or similar
+            The value function network that estimates state values
+        value_optimizer : torch.optim.Optimizer
+            Optimizer for the value function network
+        logger : object
+            Logger for tracking and saving training metrics
+        total_num_steps : int, optional
+            Total number of timesteps to train for (default: 10000)
+        max_steps_per_episode : int, optional
+            Maximum number of steps per episode (default: 1000)
+        gamma : float, optional
+            Discount factor for future rewards (default: 0.99)
+        lambda_decay : float, optional
+            GAE lambda parameter for advantage calculation (default: 0.95)
+        entropy_coef : float, optional
+            Coefficient for entropy bonus to encourage exploration (default: 0.1)
+        n_step_per_update : int, optional
+            Number of steps to collect before each policy update (default: 2048)
+        batch_size : int, optional
+            Minibatch size for policy updates (default: 64)
+        n_epoch : int, optional
+            Number of epochs to optimize on the same data (default: 10)
+        max_norm : float, optional
+            Maximum gradient norm for gradient clipping (default: 0.5)
+        epsilon : float, optional
+            PPO clipping parameter (default: 0.2)
+        value_func_epsilon : float, optional
+            Value function clipping parameter, if None no clipping (default: None)
+        kl_threshold : float, optional
+            KL divergence threshold for early stopping, if None no threshold (default: None)
+        visualize_every : int, optional
+            Visualize training every n update round (default: 10)
+        visualize_env : gym.Env, optional
+            Separate environment for visualization (default: None)
+        """
         self.env = env
         self.policy = policy
         self.policy_optimizer = policy_optimizer
         self.value_func = value_func
         self.value_optimizer = value_optimizer
+        self.logger = logger
         self.total_num_steps = total_num_steps
         self.max_steps_per_episode = max_steps_per_episode
         self.gamma = gamma
@@ -33,8 +82,8 @@ class PPO:
         self.epsilon = epsilon
         self.value_func_epsilon = value_func_epsilon
         self.kl_threshold = kl_threshold
-        self.print_info = print_info
-        self.logger = logger
+        self.visualize_every = visualize_every
+        self.visualize_env = visualize_env
 
         self.max_norm = max_norm
         self.reward_clip = 10
@@ -71,8 +120,6 @@ class PPO:
                 next_state, reward, terminated, truncated, info = self.env.step(action.numpy())
                 next_state = torch.tensor(next_state, dtype=torch.float32)
                 done = terminated or truncated
-
-                # reward = np.clip(reward, -self.reward_clip, self.reward_clip)
                 
                 episode_rewards.append(reward)
                 
@@ -198,6 +245,11 @@ class PPO:
                         
                     transitions = []
                     update_round_count += 1
+
+                    # visualize the environment
+                    if self.visualize_env is not None and update_round_count % self.visualize_every == 1:
+                        visualize_rollout = SimpleRollout(self.visualize_env)
+                        visualize_rollout.eval_rollout(1, self.policy, max_steps_per_episode=self.max_steps_per_episode)
 
                 # End update clause
 
