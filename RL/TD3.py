@@ -108,7 +108,7 @@ class TD3:
 
         uniform_policy = self._create_uniform_policy(action_dim)
 
-        simple_rollout = SimpleRollout(self.env)
+        simple_rollout = SimpleRollout(self.env, self.policy.get_action_type())
         if self.init_policy == 'uniform':
             initial_rollout = simple_rollout.rollout(
                 num_steps=self.init_buffer_size,
@@ -264,7 +264,7 @@ class TD3:
             # Visualization
             if self.visualize_env is not None and \
                 self.visualize_every > 0 and epoch % self.visualize_every == 0:
-                visualize_rollout = SimpleRollout(self.visualize_env)
+                visualize_rollout = SimpleRollout(self.visualize_env, self.policy.get_action_type())
                 visualize_rollout.eval_rollout(
                     n_episode=1, 
                     policy=self.policy, 
@@ -291,8 +291,7 @@ class TD3:
     def _create_gaussian_noise_policy(self, policy, noise_scale, noise_clip=None):
         """Create a noisy version of the policy for exploration."""
         def noisy_policy(state):
-            state_t = torch.tensor(state, dtype=torch.float32)
-            action_t = policy(state_t)
+            action_t = policy(state)
             noise_t = torch.normal(mean=0, std=noise_scale, size=action_t.size())
             if noise_clip is not None:
                 noise_t = torch.clamp(noise_t, -noise_clip, noise_clip)
@@ -306,8 +305,7 @@ class TD3:
         ou_noise = OUNoise(theta=theta, mu=np.zeros(action_dim), sigma=noise_scale, dt=dt)
 
         def ou_policy(state):
-            state_t = torch.tensor(state, dtype=torch.float32)
-            action_t = policy(state_t)
+            action_t = policy(state)
             noise = ou_noise.sample()
             if noise_clip is not None:
                 noise = np.clip(noise, -noise_clip, noise_clip)

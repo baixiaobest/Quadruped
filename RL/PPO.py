@@ -95,199 +95,177 @@ class PPO:
         self.policy.train()
         self.return_list = []
 
+        update_round_count = 0
+
+        rollout = SimpleRollout(self.env, self.policy.gete_action_type())
         steps_elapsed = 0
 
-        transitions = []
-        update_round_count = 0
-        update_round_returns = []
+        episode = 0
 
-        for episode in itertools.count():
-            state, _ = self.env.reset()
-            state = torch.tensor(state, dtype=torch.float32)
+        while steps_elapsed < self.total_num_steps:
+                
+            transitions = rollout.rollout(
+                self.n_step_per_update, self.policy, exact=False, max_steps_per_episode=self.max_steps_per_episode)
+
+            steps_elapsed += self.n_step_per_update
 
             episode_rewards = []
-            
-            for step in range(self.max_steps_per_episode):
-                action = None
+            update_round_returns = []
+            for idx, trans in enumerate(transitions):
+                reward = trans['reward']
+                state_t = torch.tensor(trans['state'], dtype=torch.float32)
+                next_state_t = torch.tensor(trans['next_state'], dtype=torch.float32)
+                done = trans['done']
+                episode_max_step_reached = trans['episode_max_step_reached']
+                step = trans['step_in_episode']
+                std = trans['std']
 
-                mean, std = self.policy.forward(state)
-                std = torch.clamp(std, min=self.std_min)
-                action_dist = torch.distributions.Normal(mean, std)
-                action = action_dist.sample()
-                action_log_prob = action_dist.log_prob(action).sum(dim=-1)
-                action = action.detach()
-
-                next_state, reward, terminated, truncated, info = self.env.step(action.numpy())
-                next_state = torch.tensor(next_state, dtype=torch.float32)
-                done = terminated or truncated
-                
                 episode_rewards.append(reward)
                 
-                target = reward + self.gamma * self.value_func(next_state).detach() * (1-done)
-                value = self.value_func(state).detach()
+                target = reward + self.gamma * self.value_func(next_state_t).detach() * (1-done)
+                value = self.value_func(state_t).detach()
                 td_error =  target - value
 
-                transitions.append({
-                    'state': state, 
-                    'next_state': next_state,
-                    'action': action, 
-                    'log_prob_old': action_log_prob.detach(),
-                    'old_value': value,
-                    'reward': reward,
-                    'done': done})
-                
+                # old_value will be used for value clipping
+                transitions[idx]['old_value'] = value
+
+                # Logging
                 self.logger.log_episode('td_error', td_error.item(), step=step, episode=episode)
                 self.logger.log_episode('target', target.item(), step=step, episode=episode)
                 self.logger.log_episode('value', value.item(), step=step, episode=episode)
                 self.logger.log_episode('reward', reward, step=step, episode=episode)
-
-                # Iterate of actions
                 for idx, p_std in enumerate(std):
                     self.logger.log_episode(f'policy_output_std_{idx}', p_std.item(), step=step, episode=episode)
                 self.logger.log_episode('policy_output_std_mean', std.mean().item(), step=step, episode=episode)
 
-                # Stop and compute td errors and advantage
-                if steps_elapsed > 0 and steps_elapsed % self.n_step_per_update == 0:
+                if done or episode_max_step_reached or idx == len(transitions) - 1:
+                    G = 0
+                    for r in reversed(episode_rewards):
+                        G = r + self.gamma * G
+                    self.return_list.append(G)
+                    update_round_returns.append(G)
 
-                    curr_round_avg_ret = np.mean(update_round_returns)
-                    self.logger.log_update('rollout_return_mean', [curr_round_avg_ret], update_round=update_round_count)
-                    update_round_returns = []
-                    print(f"Round {update_round_count} average return: {curr_round_avg_ret}")
-                    print(f"steps elapsed: {steps_elapsed}")
+                    self.logger.log_episode('return', [G], episode=episode)
+                    print(f"episode {episode} return: {G}")
+                    episode_rewards = []
+                    episode += 1
 
-                    td_errors, _ = self._compute_td_errors(transitions)
-                    # Compute Generalized Advantage Estimation (GAE) in reverse order
-                    GAE_tensor = self._compute_GAE_tensor(td_errors, transitions)
+            curr_round_avg_ret = np.mean(update_round_returns)
+            self.logger.log_update('rollout_return_mean', [curr_round_avg_ret], update_round=update_round_count)
+            print(f"Round {update_round_count} average return: {curr_round_avg_ret}")
+            print(f"steps elapsed: {steps_elapsed}")
 
-                    for epoch in range(self.n_epoch):
+            td_errors, _ = self._compute_td_errors(transitions)
+            # Compute Generalized Advantage Estimation (GAE) in reverse order
+            GAE_tensor = self._compute_GAE_tensor(td_errors, transitions)
 
-                        # Mini-batch update
-                        indices = torch.randperm(len(transitions))
-                        
-                        continue_update = True
-                        for batch_start in range(0, len(transitions), self.batch_size):
+            for epoch in range(self.n_epoch):
+
+                # Mini-batch update
+                # n_step_per_update can be smaller than the size of transitions.
+                # We discard the data that exceeds n_step_per_update.
+                indices = torch.randperm(self.n_step_per_update)
+                
+                continue_update = True
+                for batch_start in range(0, self.n_step_per_update, self.batch_size):
+                    
+                    batch_indices = indices[batch_start : batch_start + self.batch_size]
+                    batched_traj = [transitions[i] for i in batch_indices]
+
+                    batched_td_error, batched_clipped_td_error = self._compute_td_errors(batched_traj)
+                    batched_td_error = torch.cat(batched_td_error)
+                    if batched_clipped_td_error is not None:
+                        batched_clipped_td_error = torch.cat(batched_clipped_td_error)
+                    batched_GAE = torch.tensor([GAE_tensor[i] for i in batch_indices])
+
+                    # Revisit the state buffer and compute new policy probability
+                    # and policy loss.
+                    replay_state = torch.tensor(np.array([traj['state'] for traj in batched_traj]), dtype=torch.float32)
+                    replay_action = torch.tensor(np.array([traj['action'] for traj in batched_traj]), dtype=torch.float32)
+                    log_prob_old = torch.tensor(np.array([traj['action_log_prob'] for traj in batched_traj]), dtype=torch.float32)
+
+                    mean_new, std_new = self.policy(replay_state)
+                    std_new = torch.clamp(std_new, min=self.std_min)
+                    new_dist = torch.distributions.Normal(mean_new, std_new)
+                    log_prob_new = new_dist.log_prob(replay_action).sum(dim=-1)
+                    entropy = new_dist.entropy().mean()
+                    logr = log_prob_new - log_prob_old
+                    r = torch.exp(logr)
+                    L = r.mul(batched_GAE)
+                    kl_div_est_mean = ((r-1) - logr).mean()
+                    L_clamped = torch.clamp(r, 1 - self.epsilon, 1 + self.epsilon).mul(batched_GAE)
+                    policy_loss = -torch.min(L, L_clamped).mean() - self.entropy_coef * entropy
+
+                    # If KL is too big, stop the minibatch and terminate current update round
+                    if self.kl_threshold is not None and kl_div_est_mean > self.kl_threshold:
+                        continue_update = False
+                        break
+
+                    # Optimize policy and value function
+                    self.policy_optimizer.zero_grad()
+                    policy_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_norm)
+                    policy_grad = [p.grad for p in self.policy.parameters() if p.grad is not None]
+                    policy_grad_norm = torch.nn.utils.get_total_norm(policy_grad)
+                    self.policy_optimizer.step()
+
+                    value_loss_unclipped = batched_td_error.pow(2).mean()
+                    if self.value_func_epsilon is not None:
+                        value_loss_clipped = batched_clipped_td_error.pow(2).mean()
+                        value_loss = torch.max(value_loss_unclipped, value_loss_clipped)
+                    else:
+                        value_loss = value_loss_unclipped
+
+                    self.value_optimizer.zero_grad()
+                    value_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.value_func.parameters(), self.max_norm)
+                    value_grad = [p.grad for p in self.value_func.parameters() if p.grad is not None]
+                    value_grad_norm = torch.nn.utils.get_total_norm(value_grad)
+                    self.value_optimizer.step()
+
+                    # Logging
+                    policy_param_norm = torch.nn.utils.get_total_norm(self.policy.parameters())
+                    value_func_param_norm = torch.nn.utils.get_total_norm(self.value_func.parameters())
+                    index = int(epoch * self.n_step_per_update / self.batch_size + batch_start / self.batch_size)
+
+                    self.logger.log_update('policy_loss', policy_loss.item(), update_round=update_round_count, step=index)
+                    self.logger.log_update('value_loss', value_loss.item(), update_round=update_round_count, step=index)
+                    self.logger.log_update('policy_ratio', r.mean().item(), update_round=update_round_count, step=index)
+                    self.logger.log_update('policy_param_norm', policy_param_norm.item(), update_round=update_round_count, step=index)
+                    self.logger.log_update('value_param_norm', value_func_param_norm.item(), update_round=update_round_count, step=index)
+                    self.logger.log_update('policy_grad_norm', policy_grad_norm.item(), update_round=update_round_count, step=index)
+                    self.logger.log_update('value_grad_norm', value_grad_norm.item(), update_round=update_round_count, step=index)
+                    self.logger.log_update('entropy', entropy.item(), update_round=update_round_count, step=index)
+                    self.logger.log_update('kl_div_est_mean', kl_div_est_mean.item(), update_round=update_round_count, step=index)
+                    self.logger.log_update('epoch_number', epoch, update_round=update_round_count, step=index)
+                # End minbatch loop
                             
-                            batch_indices = indices[batch_start : batch_start + self.batch_size]
-                            batched_traj = [transitions[i] for i in batch_indices]
+                if not continue_update:
+                    break
 
-                            batched_td_error, batched_clipped_td_error = self._compute_td_errors(batched_traj)
-                            batched_td_error = torch.cat(batched_td_error)
-                            if batched_clipped_td_error is not None:
-                                batched_clipped_td_error = torch.cat(batched_clipped_td_error)
-                            batched_GAE = torch.tensor([GAE_tensor[i] for i in batch_indices])
+            # End epoch loop
 
-                            # Revisit the state buffer and compute new policy probability
-                            # and policy loss.
-                            replay_state = torch.stack([traj['state'] for traj in batched_traj])
-                            replay_action = torch.stack([traj['action'] for traj in batched_traj])
-                            log_prob_old = torch.stack([traj['log_prob_old'] for traj in batched_traj])
+            if self.visualize_env is not None and update_round_count % self.visualize_every == 0:
+                visualize_rollout = SimpleRollout(self.visualize_env, self.policy)
+                visualize_rollout.eval_rollout(1, self.policy, max_steps_per_episode=self.max_steps_per_episode)
 
-                            mean_new, std_new = self.policy(replay_state)
-                            std_new = torch.clamp(std_new, min=self.std_min)
-                            new_dist = torch.distributions.Normal(mean_new, std_new)
-                            log_prob_new = new_dist.log_prob(replay_action).sum(dim=-1)
-                            entropy = new_dist.entropy().mean()
-                            logr = log_prob_new - log_prob_old
-                            r = torch.exp(logr)
-                            L = r.mul(batched_GAE)
-                            kl_div_est_mean = ((r-1) - logr).mean()
-                            L_clamped = torch.clamp(r, 1 - self.epsilon, 1 + self.epsilon).mul(batched_GAE)
-                            policy_loss = -torch.min(L, L_clamped).mean() - self.entropy_coef * entropy
+            update_round_count += 1
 
-                            # If KL is too big, stop the minibatch and terminate current update round
-                            if self.kl_threshold is not None and kl_div_est_mean > self.kl_threshold:
-                                continue_update = False
-                                break
+        # End training loop
 
-                            # Optimize policy and value function
-                            self.policy_optimizer.zero_grad()
-                            policy_loss.backward()
-                            torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_norm)
-                            policy_grad = [p.grad for p in self.policy.parameters() if p.grad is not None]
-                            policy_grad_norm = torch.nn.utils.get_total_norm(policy_grad)
-                            self.policy_optimizer.step()
-
-                            value_loss_unclipped = batched_td_error.pow(2).mean()
-                            if self.value_func_epsilon is not None:
-                                value_loss_clipped = batched_clipped_td_error.pow(2).mean()
-                                value_loss = torch.max(value_loss_unclipped, value_loss_clipped)
-                            else:
-                                value_loss = value_loss_unclipped
-
-                            self.value_optimizer.zero_grad()
-                            value_loss.backward()
-                            torch.nn.utils.clip_grad_norm_(self.value_func.parameters(), self.max_norm)
-                            value_grad = [p.grad for p in self.value_func.parameters() if p.grad is not None]
-                            value_grad_norm = torch.nn.utils.get_total_norm(value_grad)
-                            self.value_optimizer.step()
-
-                            # Logging
-                            policy_param_norm = torch.nn.utils.get_total_norm(self.policy.parameters())
-                            value_func_param_norm = torch.nn.utils.get_total_norm(self.value_func.parameters())
-                            index = int(epoch * self.n_step_per_update / self.batch_size + batch_start / self.batch_size)
-
-                            self.logger.log_update('policy_loss', policy_loss.item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('value_loss', value_loss.item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('policy_ratio', r.mean().item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('policy_param_norm', policy_param_norm.item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('value_param_norm', value_func_param_norm.item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('policy_grad_norm', policy_grad_norm.item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('value_grad_norm', value_grad_norm.item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('entropy', entropy.item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('kl_div_est_mean', kl_div_est_mean.item(), update_round=update_round_count, step=index)
-                            self.logger.log_update('epoch_number', epoch, update_round=update_round_count, step=index)
-                        # End minbatch loop
-                            
-                        if not continue_update:
-                            break
-
-                    # End epoch loop
-                        
-                    transitions = []
-                    update_round_count += 1
-
-                    # visualize the environment
-                    if self.visualize_env is not None and update_round_count % self.visualize_every == 1:
-                        visualize_rollout = SimpleRollout(self.visualize_env)
-                        visualize_rollout.eval_rollout(1, self.policy, max_steps_per_episode=self.max_steps_per_episode)
-
-                # End update clause
-
-                state = next_state
-                steps_elapsed += 1
-
-                if done:
-                    # print(info)
-                    break 
-
-            # End step loop
-            
-            G = 0
-            for r in reversed(episode_rewards):
-                G = r + self.gamma * G
-            self.return_list.append(G)
-            update_round_returns.append(G)
-
-            self.logger.log_episode('return', [G], episode=episode)
-
-            print(f"episode {episode} return: {G}")
-
-            # Stops the whole training if we reach maximum total number of steps
-            if steps_elapsed >= self.total_num_steps:
-                break
-
-        # End episode loop
 
     def _compute_td_errors(self, trajectory):
         # Recompute td errors given current value function on every update
         td_errors = []
         clipped_td_errors = []
         for idx, traj in enumerate(trajectory):
+            state_t = torch.tensor(traj['state'], dtype=torch.float32)
+            next_state_t = torch.tensor(traj['next_state'], dtype=torch.float32)
             new_target = traj['reward'] \
-                + self.gamma * self.value_func(traj['next_state']).detach() * (1 - traj['done'])
+                + self.gamma * self.value_func(next_state_t).detach() * (1 - traj['done'])
                 
             # Recomputed td errors given current value function
-            new_value = self.value_func(traj['state'])
+            new_value = self.value_func(state_t)
             new_td_error = new_target - new_value
             td_errors.append(new_td_error)
             # Compute clipped td errors
