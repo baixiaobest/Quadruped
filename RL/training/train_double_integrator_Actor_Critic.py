@@ -57,7 +57,7 @@ def train(load, seed, file_name,
     policy.train()
 
     if load:
-        policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+        policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
         if set_policy_std:
             policy.set_std(set_policy_std)
 
@@ -68,7 +68,7 @@ def train(load, seed, file_name,
     value_net = SimpleValueFunction(state_dim=2, hidden_dims=[32, 32])
 
     if load:
-        value_net.load_state_dict(torch.load(f'RL/training/value_models/{file_name}.pth'))
+        value_net.load_state_dict(torch.load(f'value_models/{file_name}.pth'))
 
     value_optimizer = torch.optim.Adam(value_net.parameters(), lr=1e-3)
 
@@ -138,18 +138,21 @@ def train(load, seed, file_name,
             logger,
             n_epoch=num_episodes, 
             max_steps_per_episode=max_steps, 
-            update_after=1000, 
+            init_buffer_size=1000, 
             update_every=50, 
-            eval_every=5, 
-            eval_episode=5, 
+            eval_every=10, 
+            eval_episode=1, 
             batch_size=100, 
             replay_buffer_size=1e6, 
             policy_delay=2, 
             gamma=0.99, 
             polyak=0.995, 
-            action_noise=0.2, 
-            target_noise=0.1, 
-            noise_clip=0.2)
+            action_noise_config={
+                'type': 'gaussian',
+                'sigma': 0.2,
+                'noise_clip': 0.4,
+            }, 
+            target_noise=0.2)
     else:
         print("Invalid algorithm")
         return
@@ -158,14 +161,14 @@ def train(load, seed, file_name,
     algorithm.train()
 
     # Save the policy
-    torch.save(policy.state_dict(), f'RL/training/models/{file_name}.pth')
-    torch.save(value_net.state_dict(), f'RL/training/value_models/{file_name}.pth')
+    torch.save(policy.state_dict(), f'models/{file_name}.pth')
+    torch.save(value_net.state_dict(), f'value_models/{file_name}.pth')
 
     if show:
         # plot_returns(algorithm.get_returns_list())
         visualize_policy(policy)
         if not (algorithm_name == "one_step" or algorithm_name == "eligibility_trace"):
-            logger.save_to_file(f'RL/training/log/{file_name}.pkl')
+            logger.save_to_file(f'log/{file_name}.pkl')
             ui = LoggerUI(logger)
             ui.run()
         else:
@@ -188,13 +191,13 @@ def create_policy(policy_type='simple'):
 
 def load_policy(file_name, policy_type='simple'):
     policy = create_policy(policy_type)
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
     policy.eval()
     return policy
 
 def plot_log(file_name):
     logger = Logger()
-    logger.load_from_file(f'RL/training/log/{file_name}.pkl')
+    logger.load_from_file(f'log/{file_name}.pkl')
     ui = LoggerUI(logger)
     ui.run()
 
@@ -202,9 +205,9 @@ if __name__ == '__main__':
     # policy1 = load_policy("double_integrator_actor_critic_trace", policy_type='simple')
     # policy2 = load_policy("double_integrator_actor_critic_trace_lstm", policy_type='lstm')
     # policy3 = load_policy("double_integrator_ppo_gaussian", policy_type='gaussian')
-    policy4 = load_policy("double_integrator_td3", policy_type='deterministic')
+    # policy4 = load_policy("double_integrator_td3", policy_type='deterministic')
 
-    # inference_sweep(policy4, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, 
+    # inference_sweep(policy3, seed=10, x_range=(-5, 5), v_range=(-1, 1), grid_resolution=20, max_steps=500, 
     #                 noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 0}, show=True)
 
     # inference_double_integrator(policy4, noise={'x': 0, 'vx': 0, 'action': 0}, bias={'x': 0, 'vx': 0, 'action': 0})
@@ -235,9 +238,9 @@ if __name__ == '__main__':
     #       random_action_bias=0, policy_type='gaussian_decay')
 
     # PPO training
-    # train(load=False, seed=54, file_name='double_integrator_ppo_gaussian', num_episodes=100_000, 
-    #       max_steps=200, x_init_bound=[-1, 1], v_init_bound=[-0.5, 0.5], x_epsilon=0.1, vx_epsilon=0.1, show=True, algorithm_name="PPO", 
-    #       random_action_bias=0, policy_type='gaussian')
+    train(load=False, seed=54, file_name='double_integrator_ppo_gaussian', num_episodes=100_000, 
+          max_steps=200, x_init_bound=[-1, 1], v_init_bound=[-0.5, 0.5], x_epsilon=0.1, vx_epsilon=0.1, show=True, algorithm_name="PPO", 
+          random_action_bias=0, policy_type='gaussian')
 
     # train(load=True, seed=874, file_name='double_integrator_ppo_gaussian', num_episodes=200, 
     #       max_steps=200, x_init_bound=[-5, 5], v_init_bound=[-1, 1], x_epsilon=0.1, vx_epsilon=0.1, 
@@ -245,8 +248,8 @@ if __name__ == '__main__':
     #       set_policy_std=0.4, debug=False)
 
     # TD3 training
-    train(load=False, seed=842, file_name='double_integrator_td3', num_episodes=30_000,
-          max_steps=200, x_init_bound=[-5, 5], v_init_bound=[-1, 1], x_epsilon=0.1, vx_epsilon=0.1, 
-          show=True, algorithm_name="td3", policy_type='deterministic', debug=False)
+    # train(load=False, seed=842, file_name='double_integrator_td3', num_episodes=10_000,
+    #       max_steps=200, x_init_bound=[-5, 5], v_init_bound=[-1, 1], x_epsilon=0.1, vx_epsilon=0.1, 
+    #       show=True, algorithm_name="td3", policy_type='deterministic', debug=False)
 
     # plot_log("double_integrator_td3")

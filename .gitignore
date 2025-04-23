@@ -8,3 +8,6 @@ RL/training/photos/
 RL/training/models/
 RL/training/value_models/
 RL/training/log/
+models/
+value_models/
+log/

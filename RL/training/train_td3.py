@@ -67,11 +67,11 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
                 print("saving model")
                 max_val = R
                 # Save the policy
-                torch.save(policy.state_dict(), f'RL/training/models/{file_name}_R{R:.0f}.pth')
+                torch.save(policy.state_dict(), f'models/{file_name}_R{R:.0f}.pth')
 
                 # Save the Q value network
-                torch.save(Q1.state_dict(), f'RL/training/value_models/{file_name}_R{R:.0f}_Q1.pth')
-                torch.save(Q2.state_dict(), f'RL/training/value_models/{file_name}_R{R:.0f}_Q2.pth')
+                torch.save(Q1.state_dict(), f'value_models/{file_name}_R{R:.0f}_Q1.pth')
+                torch.save(Q2.state_dict(), f'value_models/{file_name}_R{R:.0f}_Q2.pth')
         return eval_callback
 
     algorithm = None
@@ -130,19 +130,19 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
 
     if load:
         if start_policy_name:
-            policy.load_state_dict(torch.load(f'RL/training/models/{start_policy_name}.pth'))
-            Q1.load_state_dict(torch.load(f'RL/training/value_models/{start_policy_name}_Q1.pth'))
-            Q2.load_state_dict(torch.load(f'RL/training/value_models/{start_policy_name}_Q2.pth'))
+            policy.load_state_dict(torch.load(f'models/{start_policy_name}.pth'))
+            Q1.load_state_dict(torch.load(f'value_models/{start_policy_name}_Q1.pth'))
+            Q2.load_state_dict(torch.load(f'value_models/{start_policy_name}_Q2.pth'))
             if load_log:
-                logger.load_from_file(f'RL/training/log/{start_policy_name}.pkl')
+                logger.load_from_file(f'log/{start_policy_name}.pkl')
                 logger.set_episode_offset(logger.get_max_episode() + 1)
                 logger.set_update_round_offset(logger.get_max_update_round() + 1)
         else:
-            policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
-            Q1.load_state_dict(torch.load(f'RL/training/value_models/{file_name}_Q1.pth'))
-            Q2.load_state_dict(torch.load(f'RL/training/value_models/{file_name}_Q2.pth'))
+            policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
+            Q1.load_state_dict(torch.load(f'value_models/{file_name}_Q1.pth'))
+            Q2.load_state_dict(torch.load(f'value_models/{file_name}_Q2.pth'))
             if load_log:
-                logger.load_from_file(f'RL/training/log/{file_name}.pkl')
+                logger.load_from_file(f'log/{file_name}.pkl')
                 logger.set_episode_offset(logger.get_max_episode() + 1)
                 logger.set_update_round_offset(logger.get_max_update_round() + 1)
 
@@ -151,13 +151,13 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
     visualize_env.close()
 
     # Save the policy
-    torch.save(policy.state_dict(), f'RL/training/models/{file_name}.pth')
+    torch.save(policy.state_dict(), f'models/{file_name}.pth')
 
     # Save the Q value network
-    torch.save(Q1.state_dict(), f'RL/training/value_models/{file_name}_Q1.pth')
-    torch.save(Q2.state_dict(), f'RL/training/value_models/{file_name}_Q2.pth')
+    torch.save(Q1.state_dict(), f'value_models/{file_name}_Q1.pth')
+    torch.save(Q2.state_dict(), f'value_models/{file_name}_Q2.pth')
 
-    logger.save_to_file(f'RL/training/log/{file_name}.pkl')
+    logger.save_to_file(f'log/{file_name}.pkl')
     
     if show:
         ui = LoggerUI(logger)
@@ -174,7 +174,7 @@ def inference_inverted_pendulum(file_name, render=True):
     action_dim = 1
     # Policy network and optimizer
     policy = create_policy(state_dim, action_dim)
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
 
     inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
 
@@ -187,7 +187,7 @@ def inference_half_cheetah(file_name, render=True):
     action_dim = 6
     # Policy network and optimizer
     policy = create_policy(state_dim, action_dim)
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
 
     inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
 
@@ -200,7 +200,7 @@ def inference_walker(file_name, render=True):
     action_dim = 6
     # Policy network and optimizer
     policy = create_policy(state_dim, action_dim)
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
 
     inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
 
@@ -213,7 +213,7 @@ def inference_hopper(file_name, render=True):
     action_dim = 3
     # Policy network and optimizer
     policy = create_policy(state_dim, action_dim)
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
 
     inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
 

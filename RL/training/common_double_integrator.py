@@ -320,6 +320,6 @@ def inference_sweep(policy, seed=0, x_range=(-5, 5), v_range=(-3, 3), grid_resol
 
 def plot_log(file_name):
     logger = Logger()
-    logger.load_from_file(f'RL/training/log/{file_name}.pkl')
+    logger.load_from_file(f'log/{file_name}.pkl')
     ui = LoggerUI(logger)
     ui.run()

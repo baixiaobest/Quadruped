@@ -97,7 +97,7 @@ class PPO:
 
         update_round_count = 0
 
-        rollout = SimpleRollout(self.env, self.policy.gete_action_type())
+        rollout = SimpleRollout(self.env, self.policy.get_action_type())
         steps_elapsed = 0
 
         episode = 0

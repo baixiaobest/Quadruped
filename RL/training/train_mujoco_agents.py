@@ -77,15 +77,15 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
 
     if load:
         if start_policy_name:
-            policy.load_state_dict(torch.load(f'RL/training/models/{start_policy_name}.pth'))
-            value_net.load_state_dict(torch.load(f'RL/training/value_models/{start_policy_name}.pth'))
-            logger.load_from_file(f'RL/training/log/{start_policy_name}.pkl')
+            policy.load_state_dict(torch.load(f'models/{start_policy_name}.pth'))
+            value_net.load_state_dict(torch.load(f'value_models/{start_policy_name}.pth'))
+            logger.load_from_file(f'log/{start_policy_name}.pkl')
             logger.set_episode_offset(logger.get_max_episode() + 1)
             logger.set_update_round_offset(logger.get_max_update_round() + 1)
         else:
-            policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
-            value_net.load_state_dict(torch.load(f'RL/training/value_models/{file_name}.pth'))
-            logger.load_from_file(f'RL/training/log/{file_name}.pkl')
+            policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
+            value_net.load_state_dict(torch.load(f'value_models/{file_name}.pth'))
+            logger.load_from_file(f'log/{file_name}.pkl')
             logger.set_episode_offset(logger.get_max_episode() + 1)
             logger.set_update_round_offset(logger.get_max_update_round() + 1)
 
@@ -119,14 +119,14 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         visualize_env.close()
 
     # Save the policy
-    torch.save(policy.state_dict(), f'RL/training/models/{file_name}.pth')
+    torch.save(policy.state_dict(), f'models/{file_name}.pth')
 
     # Save the value network
-    torch.save(value_net.state_dict(), f'RL/training/value_models/{file_name}.pth')
+    torch.save(value_net.state_dict(), f'value_models/{file_name}.pth')
 
     if show:
         # visualize_policy(policy)
-        logger.save_to_file(f'RL/training/log/{file_name}.pkl')
+        logger.save_to_file(f'log/{file_name}.pkl')
         ui = LoggerUI(logger)
         ui.run()
 
@@ -173,7 +173,7 @@ def inference_hopper(file_name, render=True, policy_type='gaussian'):
 
     # Policy network and optimizer
     policy = create_hopper_policy(policy_type)
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
 
     inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
 
@@ -202,7 +202,7 @@ def inference_half_cheetah(file_name, render=True):
 
     # Policy network and optimizer
     policy = create_half_cheetah_policy()
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
 
     inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
 
@@ -234,7 +234,7 @@ def inference_walker(file_name, render=True):
 
     # Policy network and optimizer
     policy = create_walker_policy()
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
 
     inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
 
@@ -265,7 +265,7 @@ def inference_ant(file_name, render=True):
 
     # Policy network and optimizer
     policy = create_ant_policy()
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
 
     inference(policy, env, max_step=10000, continue_on_terminate=True, deterministic=True)
 
@@ -304,14 +304,14 @@ def run_sb_PPO(env_name="walker", load=False):
     
     # Initialize and train the model
     if load:
-        model = PPO.load(f"RL/training/models/ppo_{env_name}", env=env)
+        model = PPO.load(f"models/ppo_{env_name}", env=env)
     else:
         model = PPO("MlpPolicy", env, verbose=1)
     model.learn(total_timesteps=1_000_000)
     
     # Save the trained model
-    # model.save("RL/training/models/ppo_hopper")
-    model.save(f"RL/training/models/stable_baseline_ppo_{env_name}")
+    # model.save("models/ppo_hopper")
+    model.save(f"models/stable_baseline_ppo_{env_name}")
     print("Model saved.")
 
     # Close the training environment
@@ -321,7 +321,7 @@ def inference_sb_PPO(env_name="walker"):
     from stable_baselines3 import PPO
 
     # Now load the model and visualize
-    loaded_model = PPO.load(f"RL/training/models/ppo_{env_name}")
+    loaded_model = PPO.load(f"models/ppo_{env_name}")
     
     if env_name == "hopper":
         render_env = gym.make("Hopper-v5", render_mode="human")
@@ -344,9 +344,9 @@ def inference_sb_PPO(env_name="walker"):
     render_env.close()
 
 if __name__=='__main__':
-     train(load=False, seed=64665, file_name="hopper_ppo_gaussian", 
-          env_name="hopper", policy_type='gaussian', num_steps=1_000_000, max_steps_per_episode=500, set_policy_std=0.4, 
-          entropy_coef=0.02, show=True, render=False)
+    #  train(load=False, seed=64665, file_name="hopper_ppo_gaussian", 
+    #       env_name="hopper", policy_type='gaussian', num_steps=1_000_000, max_steps_per_episode=500, set_policy_std=0.4, 
+    #       entropy_coef=0.02, show=True, render=False)
      
     #  plot_log(file_name="hopper_ppo_gaussian")
     
@@ -359,10 +359,10 @@ if __name__=='__main__':
     # Half Cheetah
 
     # train(load=False, seed=6335, file_name="half_cheetah_ppo_gaussian", 
-    #       env_name="half_cheetah", num_steps=5_000_000, max_steps_per_episode=200,
-    #       set_policy_std=None, entropy_coef=0.02, show=True, render=True)
+    #       env_name="half_cheetah", num_steps=1_000_000, max_steps_per_episode=200,
+    #       set_policy_std=None, entropy_coef=0.02, show=True, render=False)
     
-    # inference_half_cheetah(file_name="half_cheetah_ppo_gaussian_5M_samples")
+    # inference_half_cheetah(file_name="half_cheetah_ppo_gaussian")
 
     # plot_log(file_name="half_cheetah_ppo_gaussian_5M_samples")
 

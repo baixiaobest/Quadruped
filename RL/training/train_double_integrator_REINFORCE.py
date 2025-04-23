@@ -35,7 +35,7 @@ def training(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_eps
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
 
     if load:
-        policy.load_state_dict(torch.load('RL/training/models/double_integrator_REINFORCE.pth'))
+        policy.load_state_dict(torch.load('models/double_integrator_REINFORCE.pth'))
 
     # Create optimizer
     optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
@@ -47,7 +47,7 @@ def training(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, vx_eps
     reinforce.train()
 
     # Save the policy
-    torch.save(policy.state_dict(), 'RL/training/models/double_integrator_REINFORCE.pth')
+    torch.save(policy.state_dict(), 'models/double_integrator_REINFORCE.pth')
 
     if show:
         plot_returns(reinforce.get_returns_list())
@@ -74,7 +74,7 @@ def train_baseline(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, 
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
 
     if load:
-        policy.load_state_dict(torch.load('RL/training/models/double_integrator_REINFORCE_baseline.pth'))
+        policy.load_state_dict(torch.load('models/double_integrator_REINFORCE_baseline.pth'))
 
     # Create optimizer
     policy_optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
@@ -91,7 +91,7 @@ def train_baseline(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, 
     reinforce.train()
 
     # Save the policy
-    torch.save(policy.state_dict(), 'RL/training/models/double_integrator_REINFORCE_baseline.pth')
+    torch.save(policy.state_dict(), 'models/double_integrator_REINFORCE_baseline.pth')
 
     if show:
         plot_returns(reinforce.get_returns_list())
@@ -101,7 +101,7 @@ def train_baseline(load, seed, num_episodes=1000, max_steps=200, x_epsilon=0.5, 
 def load_policy(file_name):
     # Create the policy network
     policy = DoubleIntegratorPolicy(state_dim=2, action_dim=40, hidden_dims=[16, 64], action_range=[-1, 1])
-    policy.load_state_dict(torch.load(f'RL/training/models/{file_name}.pth'))
+    policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
     policy.eval()
     return policy
 
