@@ -11,3 +11,5 @@ RL/training/log/
 models/
 value_models/
 log/
+*.pyc
+*/__pycache__
