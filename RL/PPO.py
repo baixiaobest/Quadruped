@@ -12,12 +12,14 @@ import random
 from RL.RunningStats import RunningStats
 import math
 import itertools
+from torch.utils.tensorboard import SummaryWriter
 
 class PPO:
-    def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, logger,
+    def __init__(self, env, policy, policy_optimizer, value_func, value_optimizer, tensorboard_log_dir,
                  total_num_steps=10000, max_steps_per_episode=1000, gamma=0.99, lambda_decay=0.95, 
                  entropy_coef=0.1, n_step_per_update=2048, batch_size=64, n_epoch=10, max_norm=0.5, epsilon=0.2, 
-                 value_func_epsilon=None, kl_threshold=None, visualize_every=10, visualize_env=None):
+                 value_func_epsilon=None, kl_threshold=None, visualize_every=10, visualize_env=None,
+                 verbose_logging=False):
         """
         Initialize the Proximal Policy Optimization (PPO) algorithm.
         This implementation includes features like Generalized Advantage Estimation (GAE),
@@ -64,13 +66,14 @@ class PPO:
             Visualize training every n update round (default: 10)
         visualize_env : gym.Env, optional
             Separate environment for visualization (default: None)
+        verbose_logging : bool, optional
+            If True, log additional information (default: False)
         """
         self.env = env
         self.policy = policy
         self.policy_optimizer = policy_optimizer
         self.value_func = value_func
         self.value_optimizer = value_optimizer
-        self.logger = logger
         self.total_num_steps = total_num_steps
         self.max_steps_per_episode = max_steps_per_episode
         self.gamma = gamma
@@ -84,18 +87,21 @@ class PPO:
         self.kl_threshold = kl_threshold
         self.visualize_every = visualize_every
         self.visualize_env = visualize_env
+        self.verbose_logging = verbose_logging
 
         self.max_norm = max_norm
         self.reward_clip = 10
         self.std_min = 1e-3
 
         self.return_list = []
+
+        self.writer = SummaryWriter(log_dir=tensorboard_log_dir)
     
     def train(self):
         self.policy.train()
         self.return_list = []
 
-        update_round_count = 0
+        rollout_count = 0
 
         rollout = SimpleRollout(self.env, self.policy.get_action_type())
         steps_elapsed = 0
@@ -107,10 +113,8 @@ class PPO:
             transitions = rollout.rollout(
                 self.n_step_per_update, self.policy, exact=False, max_steps_per_episode=self.max_steps_per_episode)
 
-            steps_elapsed += self.n_step_per_update
-
             episode_rewards = []
-            update_round_returns = []
+            rollout_returns = []
             for idx, trans in enumerate(transitions):
                 reward = trans['reward']
                 state_t = torch.tensor(trans['state'], dtype=torch.float32)
@@ -130,29 +134,31 @@ class PPO:
                 transitions[idx]['old_value'] = value
 
                 # Logging
-                self.logger.log_episode('td_error', td_error.item(), step=step, episode=episode)
-                self.logger.log_episode('target', target.item(), step=step, episode=episode)
-                self.logger.log_episode('value', value.item(), step=step, episode=episode)
-                self.logger.log_episode('reward', reward, step=step, episode=episode)
-                for idx, p_std in enumerate(std):
-                    self.logger.log_episode(f'policy_output_std_{idx}', p_std.item(), step=step, episode=episode)
-                self.logger.log_episode('policy_output_std_mean', std.mean().item(), step=step, episode=episode)
+                if self.verbose_logging:
+                    self.writer.add_scalar('td_error/step', td_error.item(), steps_elapsed + idx)
+                    self.writer.add_scalar('target/step', target.item(), steps_elapsed + idx)
+                    self.writer.add_scalar('value/step', value.item(), steps_elapsed + idx)
+                    self.writer.add_scalar('reward/step', reward, steps_elapsed + idx)
+                    for idx, p_std in enumerate(std):
+                        self.writer.add_scalar(f'policy_output_std_{idx}/step', p_std.item(), steps_elapsed + idx)
+                    self.writer.add_scalar('policy_output_std_mean/step', std.mean().item(), steps_elapsed + idx)
 
                 if done or episode_max_step_reached or idx == len(transitions) - 1:
                     G = 0
                     for r in reversed(episode_rewards):
                         G = r + self.gamma * G
                     self.return_list.append(G)
-                    update_round_returns.append(G)
+                    rollout_returns.append(G)
 
-                    self.logger.log_episode('return', [G], episode=episode)
+                    self.writer.add_scalar('return/episode', G, episode)
                     print(f"episode {episode} return: {G}")
                     episode_rewards = []
                     episode += 1
 
-            curr_round_avg_ret = np.mean(update_round_returns)
-            self.logger.log_update('rollout_return_mean', [curr_round_avg_ret], update_round=update_round_count)
-            print(f"Round {update_round_count} average return: {curr_round_avg_ret}")
+            steps_elapsed += self.n_step_per_update
+            curr_round_avg_ret = np.mean(rollout_returns)
+            self.writer.add_scalar('return/rollout', curr_round_avg_ret, rollout_count)
+            print(f"Round {rollout_count} average return: {curr_round_avg_ret}")
             print(f"steps elapsed: {steps_elapsed}")
 
             td_errors, _ = self._compute_td_errors(transitions)
@@ -224,20 +230,23 @@ class PPO:
                     self.value_optimizer.step()
 
                     # Logging
-                    policy_param_norm = torch.nn.utils.get_total_norm(self.policy.parameters())
-                    value_func_param_norm = torch.nn.utils.get_total_norm(self.value_func.parameters())
-                    index = int(epoch * self.n_step_per_update / self.batch_size + batch_start / self.batch_size)
+                    if self.verbose_logging:
+                        policy_param_norm = torch.nn.utils.get_total_norm(self.policy.parameters())
+                        value_func_param_norm = torch.nn.utils.get_total_norm(self.value_func.parameters())
+                        n_batches = math.ceil(self.n_step_per_update / self.batch_size)
+                        total_batch_update = int(rollout_count * self.n_epoch * n_batches + batch_start / self.batch_size)
 
-                    self.logger.log_update('policy_loss', policy_loss.item(), update_round=update_round_count, step=index)
-                    self.logger.log_update('value_loss', value_loss.item(), update_round=update_round_count, step=index)
-                    self.logger.log_update('policy_ratio', r.mean().item(), update_round=update_round_count, step=index)
-                    self.logger.log_update('policy_param_norm', policy_param_norm.item(), update_round=update_round_count, step=index)
-                    self.logger.log_update('value_param_norm', value_func_param_norm.item(), update_round=update_round_count, step=index)
-                    self.logger.log_update('policy_grad_norm', policy_grad_norm.item(), update_round=update_round_count, step=index)
-                    self.logger.log_update('value_grad_norm', value_grad_norm.item(), update_round=update_round_count, step=index)
-                    self.logger.log_update('entropy', entropy.item(), update_round=update_round_count, step=index)
-                    self.logger.log_update('kl_div_est_mean', kl_div_est_mean.item(), update_round=update_round_count, step=index)
-                    self.logger.log_update('epoch_number', epoch, update_round=update_round_count, step=index)
+                        self.writer.add_scalar('policy_loss/batch', policy_loss.item(), total_batch_update)
+                        self.writer.add_scalar('value_loss/batch', value_loss.item(), total_batch_update)
+                        self.writer.add_scalar('policy_ratio/batch', r.mean().item(), total_batch_update)
+                        self.writer.add_scalar('policy_param_norm/batch', policy_param_norm.item(), total_batch_update)
+                        self.writer.add_scalar('value_param_norm/batch', value_func_param_norm.item(), total_batch_update)
+                        self.writer.add_scalar('policy_grad_norm/batch', policy_grad_norm.item(), total_batch_update)
+                        self.writer.add_scalar('value_grad_norm/batch', value_grad_norm.item(), total_batch_update)
+                        self.writer.add_scalar('entropy/batch', entropy.item(), total_batch_update)
+                        self.writer.add_scalar('kl_div_est_mean/batch', kl_div_est_mean.item(), total_batch_update)
+                        self.writer.add_scalar('epoch_number/batch', epoch, total_batch_update)
+                        self.writer.add_scalar('rollout_count/batch', rollout_count, total_batch_update)
                 # End minbatch loop
                             
                 if not continue_update:
@@ -245,11 +254,11 @@ class PPO:
 
             # End epoch loop
 
-            if self.visualize_env is not None and update_round_count % self.visualize_every == 0:
+            if self.visualize_env is not None and rollout_count % self.visualize_every == 0:
                 visualize_rollout = SimpleRollout(self.visualize_env, self.policy)
                 visualize_rollout.eval_rollout(1, self.policy, max_steps_per_episode=self.max_steps_per_episode)
 
-            update_round_count += 1
+            rollout_count += 1
 
         # End training loop
 

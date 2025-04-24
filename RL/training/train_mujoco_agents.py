@@ -109,9 +109,10 @@ def train(load, seed, file_name, start_policy_name=None, num_steps=100, max_step
         epsilon=0.2,
         value_func_epsilon=None,
         kl_threshold=0.1,
-        logger=logger,
         visualize_every=10,
-        visualize_env=visualize_env)
+        visualize_env=visualize_env,
+        tensorboard_log_dir=f'log/{file_name}',
+        verbose_logging=True)
 
     algorithm.train()
     env.close()
@@ -358,9 +359,9 @@ if __name__=='__main__':
 
     # Half Cheetah
 
-    # train(load=False, seed=6335, file_name="half_cheetah_ppo_gaussian", 
-    #       env_name="half_cheetah", num_steps=1_000_000, max_steps_per_episode=200,
-    #       set_policy_std=None, entropy_coef=0.02, show=True, render=False)
+    train(load=False, seed=6335, file_name="half_cheetah_ppo_gaussian", 
+          env_name="half_cheetah", num_steps=1_000_000, max_steps_per_episode=200,
+          set_policy_std=None, entropy_coef=0.02, show=True, render=False)
     
     # inference_half_cheetah(file_name="half_cheetah_ppo_gaussian")
 
@@ -392,4 +393,4 @@ if __name__=='__main__':
     # plot_log(file_name="ant_ppo_gaussian")
 
     # run_sb_PPO(env_name="ant", load=False)
-    # inference_sb_PPO()
+    inference_sb_PPO()

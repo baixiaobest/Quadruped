@@ -91,12 +91,13 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
             Q1_optimizer, 
             Q2, 
             Q2_optimizer, 
-            logger,
+            tensorboard_log_dir=f'log/{file_name}',
             n_epoch=num_epoch, 
             max_steps_per_episode=max_steps_per_episode, 
             init_buffer_size=50_000, 
             init_policy=init_policy,
-            update_every=50, 
+            rollout_steps=50,
+            update_per_rollout=25,
             eval_every=50, 
             eval_episode=5, 
             batch_size=300, 
@@ -104,25 +105,25 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
             policy_delay=2, 
             gamma=0.99, 
             polyak=0.995, 
-            action_noise_config={
-                'type': 'OU',
-                'theta': 0.15,
-                'sigma': 0.2,
-                'dt': 2e-3,
-                'noise_clip': 0.3,
-            }, 
             # action_noise_config={
-            #     'type': 'gaussian',
+            #     'type': 'OU',
+            #     'theta': 0.15,
             #     'sigma': 0.2,
-            #     'noise_clip': 0.4,
+            #     'dt': 2e-3,
+            #     'noise_clip': 0.5,
             # }, 
+            action_noise_config={
+                'type': 'gaussian',
+                'sigma': 0.2,
+                'noise_clip': 0.5,
+            }, 
             target_noise=0.2, 
-            eval_callback=get_eval_callback(),
-            true_q_estimate_every=2000,
-            true_q_estimate_episode=50,
+            # eval_callback=get_eval_callback(),
+            # true_q_estimate_every=2000,
+            # true_q_estimate_episode=50,
             verbose_logging=verbose_logging,
             visualize_env=visualize_env,
-            visualize_every=2000)
+            visualize_every=1000)
     
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm_name}")
@@ -241,9 +242,13 @@ if __name__=="__main__":
 
     # Hopper
 
-    train(load=True, load_log=False, seed=53587, file_name="td3_hopper", algorithm_name="td3", 
-          start_policy_name="td3_hopper_R232", env_name="hopper", num_epoch=20_000, max_steps_per_episode=500, 
-          show=True, verbose_logging=False)
+    # train(load=False, load_log=False, seed=53587, file_name="td3_hopper", algorithm_name="td3", 
+    #       start_policy_name=None, env_name="hopper", num_epoch=20_000, max_steps_per_episode=300, 
+    #       show=True, verbose_logging=True)
+
+    # train(load=True, load_log=False, seed=53587, file_name="td3_hopper", algorithm_name="td3", 
+    #       start_policy_name="td3_hopper_R232", env_name="hopper", num_epoch=20_000, max_steps_per_episode=500, 
+    #       show=True, verbose_logging=False)
     
     # inference_hopper(file_name="td3_hopper", render=True)
 

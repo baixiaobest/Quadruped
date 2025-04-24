@@ -12,13 +12,15 @@ from RL.ReplayBuffer import ReplayBuffer
 from RL.OUNoise import OUNoise
 import copy
 import numpy as np
+from torch.utils.tensorboard import SummaryWriter
 
 class TD3:
-    def __init__(self, env, policy, policy_optimizer, Q1, Q1_optimizer, Q2, Q2_optimizer, logger,
-                 n_epoch=10000, max_steps_per_episode=1000, init_buffer_size=1000, init_policy='uniform', update_every=50, 
-                 eval_every=10, eval_episode=1, batch_size=100, replay_buffer_size=1e6, policy_delay=2, gamma=0.99, polyak=0.995, 
-                 action_noise_config={'type': 'gaussian', 'sigma': 0.2, 'noise_clip': 0.2}, 
-                 target_noise=0.2, target_noise_clip=0.2,
+    def __init__(self, env, policy, policy_optimizer, Q1, Q1_optimizer, Q2, Q2_optimizer, tensorboard_log_dir,
+                 n_epoch=10000, max_steps_per_episode=1000, init_buffer_size=1000, init_policy='uniform', 
+                 rollout_steps=50, update_per_rollout=50, eval_every=50, eval_episode=1, batch_size=100, 
+                 replay_buffer_size=1e6, policy_delay=2, gamma=0.99, polyak=0.995, 
+                 action_noise_config={'type': 'gaussian', 'sigma': 0.2, 'noise_clip': 0.5}, 
+                 target_noise=0.2, target_noise_clip=0.5,
                  # Debug
                  eval_callback=None, true_q_estimate_every=-1, 
                  true_q_estimate_episode=100, verbose_logging=False, 
@@ -40,7 +42,8 @@ class TD3:
             n_epoch (int): Total number of training epochs
             max_steps_per_episode (int): Maximum number of steps per episode before termination
             init_buffer_size (int): Number of env steps to take before starting to update networks
-            update_every (int): Number of env steps between network update rounds
+            rollout_steps (int): Number of env steps per rollout
+            update_per_rollout (int): Number of updates per rollout
             eval_every (int): Number of training epochs between evaluation runs
             batch_size (int): Size of minibatch sampled from replay buffer for updates
             replay_buffer_size (float): Maximum size of replay buffer
@@ -64,12 +67,12 @@ class TD3:
         self.Q1_optimizer = Q1_optimizer
         self.Q2 = Q2
         self.Q2_optimizer = Q2_optimizer
-        self.logger = logger
         self.n_epoch = n_epoch
         self.max_steps_per_episode = max_steps_per_episode
         self.init_buffer_size = init_buffer_size
         self.init_policy = init_policy
-        self.update_every = update_every
+        self.rollout_steps = rollout_steps
+        self.update_per_rollout = update_per_rollout
         self.eval_every = eval_every
         self.eval_episode = eval_episode
         self.batch_size = batch_size
@@ -86,6 +89,8 @@ class TD3:
         self.verbose_logging = verbose_logging
         self.visualize_every = visualize_every
         self.visualize_env = visualize_env
+
+        self.writer = SummaryWriter(log_dir=tensorboard_log_dir)
 
         self.max_grad_norm = 0.5
 
@@ -124,14 +129,16 @@ class TD3:
         self.policy.train()
         self.Q1.train()
         self.Q2.train()
-
+        
         for epoch in range(self.n_epoch):
             # Interact with the environment using current policy
             noisy_rollout_policy = self._get_noisy_rollout_policy(action_dim)
-            self.replay_buffer.add_list(
-                simple_rollout.rollout(num_steps=self.update_every, 
-                                       policy=noisy_rollout_policy, 
-                                       max_steps_per_episode=self.max_steps_per_episode))
+
+            if self.update_per_rollout > 0 or epoch % self.update_per_rollout == 0:
+                self.replay_buffer.add_list(
+                    simple_rollout.rollout(num_steps=self.rollout_steps, 
+                                        policy=noisy_rollout_policy, 
+                                        max_steps_per_episode=self.max_steps_per_episode))
 
             # Sample a batch of transitions
             batch = self.replay_buffer.sample(self.batch_size)
@@ -177,25 +184,25 @@ class TD3:
 
             Q1_parameters_norm = torch.nn.utils.get_total_norm(self.Q1.parameters())
             Q2_parameters_norm = torch.nn.utils.get_total_norm(self.Q2.parameters())
-            self.logger.log_update('Q1_loss', [Q1_loss.item()], update_round=epoch)
-            self.logger.log_update('Q2_loss', [Q2_loss.item()], update_round=epoch)
-            self.logger.log_update('Q1_param_norm', [Q1_parameters_norm], update_round=epoch)
-            self.logger.log_update('Q2_param_norm', [Q2_parameters_norm], update_round=epoch)
-            self.logger.log_update('Q1_grad_norm', [q1_grads_norm], update_round=epoch)
-            self.logger.log_update('Q2_grad_norm', [q2_grads_norm], update_round=epoch)
+            self.writer.add_scalar('Q1_loss', Q1_loss.item(), epoch)
+            self.writer.add_scalar('Q2_loss', Q2_loss.item(), epoch)
+            self.writer.add_scalar('Q1_param_norm', Q1_parameters_norm, epoch)
+            self.writer.add_scalar('Q2_param_norm', Q2_parameters_norm, epoch)
+            self.writer.add_scalar('Q1_grad_norm', q1_grads_norm, epoch)
+            self.writer.add_scalar('Q2_grad_norm', q2_grads_norm, epoch)
             # This is a lot of data, so we log it only if verbose_logging is enabled
             if self.verbose_logging:
-                self.logger.log_update('targets', list(target.numpy()), update_round=epoch)
-                self.logger.log_update('Q1_td_errors', list(Q1_td_error.detach().numpy()), update_round=epoch)
-                self.logger.log_update('Q2_td_errors', list(Q2_td_error.detach().numpy()), update_round=epoch)
-                self.logger.log_update('Q1_values', list(Q1_values.detach().numpy()), update_round=epoch)
-                self.logger.log_update('Q2_values', list(Q2_values.detach().numpy()), update_round=epoch)
-            else:
-                self.logger.log_update('targets_mean', [target.mean().item()], update_round=epoch)
-                self.logger.log_update('Q1_td_errors_mean', [Q1_td_error.mean().item()], update_round=epoch)
-                self.logger.log_update('Q2_td_errors_mean', [Q2_td_error.mean().item()], update_round=epoch)
-                self.logger.log_update('Q1_values_mean', [Q1_values.mean().item()], update_round=epoch)
-                self.logger.log_update('Q2_values_mean', [Q2_values.mean().item()], update_round=epoch)
+                self.writer.add_histogram('targets', target, epoch)
+                self.writer.add_histogram('Q1_td_errors', Q1_td_error, epoch)
+                self.writer.add_histogram('Q2_td_errors', Q2_td_error, epoch)
+                self.writer.add_histogram('Q1_values', Q1_values, epoch)
+                self.writer.add_histogram('Q2_values', Q2_values, epoch)
+            
+            self.writer.add_scalar('targets_mean', target.mean().item(), epoch)
+            self.writer.add_scalar('Q1_td_errors_mean', Q1_td_error.mean().item(), epoch)
+            self.writer.add_scalar('Q2_td_errors_mean', Q2_td_error.mean().item(), epoch)
+            self.writer.add_scalar('Q1_values_mean', Q1_values.mean().item(), epoch)
+            self.writer.add_scalar('Q2_values_mean', Q2_values.mean().item(), epoch)
 
             # Delay policy updates
             if epoch > 0 and epoch % self.policy_delay == 0:
@@ -221,9 +228,9 @@ class TD3:
                 
                 # Logging
                 policy_parameters_norm = torch.nn.utils.get_total_norm(self.policy.parameters())
-                self.logger.log_update('policy_loss', [policy_loss.item()], update_round=epoch)
-                self.logger.log_update('policy_param_norm', [policy_parameters_norm], update_round=epoch)
-                self.logger.log_update('policy_grad_norm', [policy_grad_norm], update_round=epoch)
+                self.writer.add_scalar('policy_loss', policy_loss.item(), epoch)
+                self.writer.add_scalar('policy_param_norm', policy_parameters_norm, epoch)
+                self.writer.add_scalar('policy_grad_norm', policy_grad_norm, epoch)
 
             # Evaluate the policy every eval_every epochs
             if epoch % self.eval_every == 0:
@@ -238,9 +245,8 @@ class TD3:
                 if self.eval_callback:
                     self.eval_callback(epoch, eval_mean_return, self.policy, self.Q1, self.Q2)
 
-                self.logger.log_update('eval_return', [eval_mean_return], update_round=epoch)
-                self.logger.log_update('eval_episode_length', [episode_length], update_round=epoch)
-
+                self.writer.add_scalar('eval_return', eval_mean_return, epoch)
+                self.writer.add_scalar('eval_episode_length', episode_length, epoch)
                 print(f"Epoch: {epoch}, return: {eval_mean_return:.2f}, episode length: {episode_length:.2f}")
             
             # Debugging: Comparing Q-values with true Q-values
@@ -257,9 +263,9 @@ class TD3:
                     max_steps_per_episode=self.max_steps_per_episode,
                     gamma=self.gamma)
 
-                self.logger.log_update('debug_true_q_estimate', [true_q_estimate], update_round=epoch)
-                self.logger.log_update('debug_q_value_1', [q_value_1.detach().numpy()], update_round=epoch)
-                self.logger.log_update('debug_q_value_2', [q_value_2.detach().numpy()], update_round=epoch)
+                self.writer.add_histogram('debug_true_q_estimate', torch.tensor(true_q_estimate), epoch)
+                self.writer.add_scalar('debug_q_value_1', q_value_1.item(), epoch)
+                self.writer.add_scalar('debug_q_value_2', q_value_2.item(), epoch)
 
             # Visualization
             if self.visualize_env is not None and \
