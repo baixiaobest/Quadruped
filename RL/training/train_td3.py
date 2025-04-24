@@ -96,10 +96,10 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
             max_steps_per_episode=max_steps_per_episode, 
             init_buffer_size=50_000, 
             init_policy=init_policy,
-            rollout_steps=50,
-            update_per_rollout=25,
-            eval_every=50, 
-            eval_episode=5, 
+            rollout_steps=100,
+            update_per_rollout=20,
+            eval_every=100, 
+            eval_episode=1, 
             batch_size=300, 
             replay_buffer_size=1e6, 
             policy_delay=2, 
@@ -224,8 +224,8 @@ if __name__=="__main__":
 
     # Inverted pendulum
 
-    # train(load=False, load_log=False, seed=7846, file_name="td3_inverted_pendulum", algorithm_name="td3", start_policy_name=None, 
-    #       env_name="inverted_pendulum", num_epoch=30_000, max_steps_per_episode=200, show=True)
+    train(load=False, load_log=False, seed=7846, file_name="td3_inverted_pendulum", algorithm_name="td3", start_policy_name=None, 
+          env_name="inverted_pendulum", num_epoch=30_000, max_steps_per_episode=200, show=True)
     
     # plot_log(file_name="td3_inverted_pendulum")
 

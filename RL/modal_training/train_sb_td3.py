@@ -8,7 +8,19 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from datetime import datetime
 from RL.modal_training.image_definitions import IMAGES
 
-PREFIX_NAME = "sb_td3_hopper"
+
+############### Training Setting ########################
+PREFIX_NAME = "sb_td3_half_cheetah"
+env_name = "HalfCheetah-v5"
+
+lr_multiplier = 1
+lr_base = -4
+lr = lr_multiplier * 10 ** lr_base
+
+total_num_steps = 3_000_000
+
+save_file_name = f'{PREFIX_NAME}_lr_{lr_multiplier}e{lr_base}_{total_num_steps}_steps'
+##########################################################
 
 image = IMAGES["default"].add_local_python_source("RL")
 
@@ -29,17 +41,11 @@ def train():
     import random
     from stable_baselines3 import TD3
 
-    ############### Training Setting ########################
-    seed = 545997
+    seed = random.randint(0, 2**32 - 1)
+
     random.seed(seed)
     torch.manual_seed(seed)
 
-    lr = 1e-4
-    total_num_steps = 3_000_000
-    save_file_name = f'{PREFIX_NAME}_{total_num_steps}_steps'
-    env_name = "Hopper-v5"
-
-    ##########################################################
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     # Create environment with Gymnasium
@@ -51,12 +57,12 @@ def train():
         env,
         learning_rate=lr,
         buffer_size=int(1e6),
-        learning_starts=1000,
+        learning_starts=50_000,
         batch_size=256,
         tau=0.005,
         gamma=0.99,
-        train_freq=(1, "episode"),
-        gradient_steps=1,
+        train_freq=(100, "step"),
+        gradient_steps=20,
         action_noise=None,
         policy_kwargs=dict(net_arch=[128, 64]),
         verbose=1,

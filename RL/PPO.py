@@ -135,13 +135,13 @@ class PPO:
 
                 # Logging
                 if self.verbose_logging:
-                    self.writer.add_scalar('td_error/step', td_error.item(), steps_elapsed + idx)
-                    self.writer.add_scalar('target/step', target.item(), steps_elapsed + idx)
-                    self.writer.add_scalar('value/step', value.item(), steps_elapsed + idx)
-                    self.writer.add_scalar('reward/step', reward, steps_elapsed + idx)
+                    self.writer.add_scalar('td_error--step', td_error.item(), steps_elapsed + idx)
+                    self.writer.add_scalar('target--step', target.item(), steps_elapsed + idx)
+                    self.writer.add_scalar('value--step', value.item(), steps_elapsed + idx)
+                    self.writer.add_scalar('reward--step', reward, steps_elapsed + idx)
                     for idx, p_std in enumerate(std):
-                        self.writer.add_scalar(f'policy_output_std_{idx}/step', p_std.item(), steps_elapsed + idx)
-                    self.writer.add_scalar('policy_output_std_mean/step', std.mean().item(), steps_elapsed + idx)
+                        self.writer.add_scalar(f'policy_output_std_{idx}--step', p_std.item(), steps_elapsed + idx)
+                    self.writer.add_scalar('policy_output_std_mean--step', std.mean().item(), steps_elapsed + idx)
 
                 if done or episode_max_step_reached or idx == len(transitions) - 1:
                     G = 0
@@ -157,7 +157,7 @@ class PPO:
 
             steps_elapsed += self.n_step_per_update
             curr_round_avg_ret = np.mean(rollout_returns)
-            self.writer.add_scalar('return/rollout', curr_round_avg_ret, rollout_count)
+            self.writer.add_scalar('return--rollout', curr_round_avg_ret, rollout_count)
             print(f"Round {rollout_count} average return: {curr_round_avg_ret}")
             print(f"steps elapsed: {steps_elapsed}")
 
@@ -236,17 +236,17 @@ class PPO:
                         n_batches = math.ceil(self.n_step_per_update / self.batch_size)
                         total_batch_update = int(rollout_count * self.n_epoch * n_batches + batch_start / self.batch_size)
 
-                        self.writer.add_scalar('policy_loss/batch', policy_loss.item(), total_batch_update)
-                        self.writer.add_scalar('value_loss/batch', value_loss.item(), total_batch_update)
-                        self.writer.add_scalar('policy_ratio/batch', r.mean().item(), total_batch_update)
-                        self.writer.add_scalar('policy_param_norm/batch', policy_param_norm.item(), total_batch_update)
-                        self.writer.add_scalar('value_param_norm/batch', value_func_param_norm.item(), total_batch_update)
-                        self.writer.add_scalar('policy_grad_norm/batch', policy_grad_norm.item(), total_batch_update)
-                        self.writer.add_scalar('value_grad_norm/batch', value_grad_norm.item(), total_batch_update)
-                        self.writer.add_scalar('entropy/batch', entropy.item(), total_batch_update)
-                        self.writer.add_scalar('kl_div_est_mean/batch', kl_div_est_mean.item(), total_batch_update)
-                        self.writer.add_scalar('epoch_number/batch', epoch, total_batch_update)
-                        self.writer.add_scalar('rollout_count/batch', rollout_count, total_batch_update)
+                        self.writer.add_scalar('policy_loss--batch', policy_loss.item(), total_batch_update)
+                        self.writer.add_scalar('value_loss--batch', value_loss.item(), total_batch_update)
+                        self.writer.add_scalar('policy_ratio--batch', r.mean().item(), total_batch_update)
+                        self.writer.add_scalar('policy_param_norm--batch', policy_param_norm.item(), total_batch_update)
+                        self.writer.add_scalar('value_param_norm--batch', value_func_param_norm.item(), total_batch_update)
+                        self.writer.add_scalar('policy_grad_norm--batch', policy_grad_norm.item(), total_batch_update)
+                        self.writer.add_scalar('value_grad_norm--batch', value_grad_norm.item(), total_batch_update)
+                        self.writer.add_scalar('entropy--batch', entropy.item(), total_batch_update)
+                        self.writer.add_scalar('kl_div_est_mean--batch', kl_div_est_mean.item(), total_batch_update)
+                        self.writer.add_scalar('epoch_number--batch', epoch, total_batch_update)
+                        self.writer.add_scalar('rollout_count--batch', rollout_count, total_batch_update)
                 # End minbatch loop
                             
                 if not continue_update:

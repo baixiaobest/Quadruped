@@ -13,8 +13,9 @@ class SimpleRollout:
         self.env = env
         self.action_type = action_type
 
-    def rollout(self, num_steps, policy, exact=True, max_steps_per_episode=1000):
-        state, _ = self.env.reset()
+    def rollout(self, num_steps, policy, state=None, exact=True, max_steps_per_episode=1000):
+        if state is None:
+            state, _ = self.env.reset()
 
         transitions = []
         steps_in_episode = 0
