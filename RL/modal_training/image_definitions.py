@@ -31,10 +31,11 @@ default_image = (
     .pip_install(
         "gymnasium==1.0.0",
         "mujoco==3.3.1",  # Official Python bindings
-        "stable-baselines3",
-        "torch",
-        "numpy",
-        "imageio",
+        "numpy==1.26.4",
+        "torch==2.6.0",
+        "tensorboard==2.19.0",
+        "stable-baselines3==2.6.0",
+        "imageio"
     )
     .add_local_python_source("RL")
 )
