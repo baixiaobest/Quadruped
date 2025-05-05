@@ -1,6 +1,5 @@
 import sys
 import os
-from tabnanny import verbose
 # Add the parent directory (root) to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
@@ -10,10 +9,10 @@ import torch
 import numpy as np
 from RL.Rollout import SimpleRollout, FastRollout
 from RL.ReplayBuffer import ReplayBuffer
-from RL.OUNoise import OUNoise
 import copy
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
+from RL.NoisePolicy import GaussianNoisePolicy, OUNoisePolicy, UniformPolicy
 
 class TD3:
     def __init__(self, env, eval_env, state_dim, action_dim, policy, policy_optimizer, Q1, Q1_optimizer, Q2, Q2_optimizer, 
@@ -120,7 +119,7 @@ class TD3:
 
         # initial buffer filling
         if self.init_policy == 'uniform':
-            uniform_policy = self._create_uniform_policy(self.action_dim)
+            uniform_policy = UniformPolicy(self.action_dim, cache_size=self.init_buffer_size)
             initial_rollout = self.fast_rollout.rollout(
                 num_steps=self.init_buffer_size,
                 reset=True,
@@ -130,7 +129,7 @@ class TD3:
             initial_rollout = self.fast_rollout.rollout(
                 num_steps=self.init_buffer_size,
                 reset=True,
-                policy=self._get_noisy_rollout_policy(self.action_dim),
+                policy=self._get_noisy_rollout_policy(self.policy, self.init_buffer_size),
                 max_steps_per_episode=self.max_steps_per_episode)
         self.replay_buffer.add(initial_rollout)
 
@@ -142,7 +141,7 @@ class TD3:
         
         for epoch in range(self.n_epoch):
             # Interact with the environment using current policy
-            noisy_rollout_policy = self._get_noisy_rollout_policy(self.action_dim)
+            noisy_rollout_policy = self._get_noisy_rollout_policy(self.policy, self.rollout_steps)
 
             if self.update_per_rollout > 0 and epoch % self.update_per_rollout == 0:
                 transitions = self.fast_rollout.rollout(
@@ -151,7 +150,7 @@ class TD3:
                                         policy=noisy_rollout_policy, 
                                         max_steps_per_episode=self.max_steps_per_episode)
                 self.replay_buffer.add(transitions)
-                total_steps += len(transitions)
+                total_steps += transitions['state'].shape[0]
 
             with torch.no_grad():
                 # Sample a batch of transitions
@@ -163,7 +162,7 @@ class TD3:
                 dones = torch.tensor(batch['done'], dtype=torch.float32)
 
                 # Compute target with target policy noise for smoothing
-                target_policy_noise = self._create_gaussian_noise_policy(self.policy_target, self.target_noise, self.target_noise_clip)
+                target_policy_noise = self._get_noisy_rollout_policy(self.policy_target, self.batch_size)
                 min_Q_target = torch.min(
                     self.Q_target_1(next_states, target_policy_noise(next_states)), 
                     self.Q_target_2(next_states, target_policy_noise(next_states))
@@ -267,56 +266,25 @@ class TD3:
                     max_steps_per_episode=self.max_steps_per_episode, 
                     gamma=self.gamma)
 
-    def _get_noisy_rollout_policy(self, action_dim):
+    def _get_noisy_rollout_policy(self, policy, cache_size):
         if self.action_noise_config['type'] == 'gaussian':
-            return self._create_gaussian_noise_policy(\
-                self.policy, 
-                self.action_noise_config['sigma'], 
-                self.action_noise_config['noise_clip'])
+            return GaussianNoisePolicy(
+                base_policy=policy, 
+                noise_scale=self.action_noise_config['sigma'], 
+                noise_clip=self.action_noise_config['noise_clip'],
+                action_dim=self.action_dim,
+                cache_size=cache_size)
         elif self.action_noise_config['type'] == 'OU':
-            return self._create_OU_noise_policy(\
-                self.policy, 
-                action_dim=action_dim,
+            return OUNoisePolicy(
+                base_policy=policy,
+                action_dim=self.action_dim,
                 noise_scale=self.action_noise_config['sigma'],
                 dt=self.action_noise_config['dt'],
                 theta=self.action_noise_config['theta'],
-                noise_clip=self.action_noise_config['noise_clip'])
+                noise_clip=self.action_noise_config['noise_clip'],
+                cache_size=cache_size)
         else:
             raise ValueError(f"Unsupported action noise type: {self.action_noise_config['type']}")
-
-    def _create_gaussian_noise_policy(self, policy, noise_scale, noise_clip=None):
-        """Create a noisy version of the policy for exploration."""
-        def noisy_policy(state):
-            action_t = policy(state)
-            noise_t = torch.normal(mean=0, std=noise_scale, size=action_t.size())
-            if noise_clip is not None:
-                noise_t = torch.clamp(noise_t, -noise_clip, noise_clip)
-            noisy_action_t = action_t + noise_t
-            noisy_action_t = torch.clamp(noisy_action_t, -1, 1)
-            return noisy_action_t
-        return noisy_policy
-    
-    def _create_OU_noise_policy(self, policy, action_dim, noise_scale=0.2, dt=0.01, theta=0.15, noise_clip=None):
-        """Create an Ornstein-Uhlenbeck noise policy for exploration."""
-        ou_noise = OUNoise(theta=theta, mu=np.zeros(action_dim), sigma=noise_scale, dt=dt)
-
-        def ou_policy(state):
-            action_t = policy(state)
-            noise = ou_noise.sample()
-            if noise_clip is not None:
-                noise = np.clip(noise, -noise_clip, noise_clip)
-                ou_noise.set_noise(noise)
-            noise_t = torch.tensor(noise, dtype=torch.float32)
-            noisy_action_t = action_t + noise_t
-            noisy_action_t = torch.clamp(noisy_action_t, -1, 1)
-            return noisy_action_t
-        return ou_policy
-    
-    def _create_uniform_policy(self, action_dim):
-        """Create a uniform policy for exploration."""
-        def uniform_policy(state):
-            return torch.clamp(torch.rand(action_dim) * 2.0 - 1.0, -1, 1)
-        return uniform_policy
         
     def _set_network_grad(self, network, requires_grad):
         """Set the gradient requirement for the network."""
