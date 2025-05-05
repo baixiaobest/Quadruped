@@ -7,12 +7,13 @@ from matplotlib.backend_bases import NonGuiException
 from sympy import Q
 import torch
 import numpy as np
-from RL.Rollout import SimpleRollout, FastRollout
+from RL.Rollout import SimpleRollout, FastRollout, VectorizedRollout
 from RL.ReplayBuffer import ReplayBuffer
 import copy
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 from RL.NoisePolicy import GaussianNoisePolicy, OUNoisePolicy, UniformPolicy
+from typing import List
 
 class TD3:
     def __init__(self, env, eval_env, state_dim, action_dim, policy, policy_optimizer, Q1, Q1_optimizer, Q2, Q2_optimizer, 
@@ -104,33 +105,53 @@ class TD3:
         self.Q_target_1.eval()
         self.Q_target_2.eval()
 
-        self.fast_rollout = FastRollout(
-            env=self.env, 
-            action_type=self.policy.get_action_type(), 
-            state_shape=self.state_dim, 
-            action_shape=self.action_dim)
+        self.num_env = 1
+
+        if isinstance(self.env, List):
+            self.env_rollout = VectorizedRollout(
+                envs=self.env, 
+                action_type=self.policy.get_action_type(), 
+                state_shape=(self.state_dim,), 
+                action_shape=(self.action_dim,))
+            self.num_env = len(self.env)
+        else:
+            self.env_rollout = FastRollout(
+                env=self.env, 
+                action_type=self.policy.get_action_type(), 
+                state_shape=(self.state_dim,), 
+                action_shape=(self.action_dim,))
 
         # Initialize replay buffer to store agent experiences
         self.replay_buffer = ReplayBuffer(
             capacity=self.replay_buffer_size, 
-            structure=self.fast_rollout.get_structure())
+            structure=self.env_rollout.get_structure())
 
     def train(self):
 
         # initial buffer filling
         if self.init_policy == 'uniform':
-            uniform_policy = UniformPolicy(self.action_dim, cache_size=self.init_buffer_size)
-            initial_rollout = self.fast_rollout.rollout(
+            if self.num_env == 1:
+                uniform_policy = UniformPolicy(self.action_dim, cache_size=self.init_buffer_size)
+            else:
+                uniform_policy = [UniformPolicy(self.action_dim, cache_size=self.init_buffer_size // self.num_env) for _ in range(self.num_env)]
+            
+            initial_rollout = self.env_rollout.rollout(
                 num_steps=self.init_buffer_size,
                 reset=True,
                 policy=uniform_policy,
                 max_steps_per_episode=self.max_steps_per_episode)
         elif self.init_policy == 'current':
-            initial_rollout = self.fast_rollout.rollout(
+            if num_env == 1:
+                noisy_rollout_policy = self._get_noisy_rollout_policy(self.policy, self.init_buffer_size)
+            else:
+                noisy_rollout_policy = [self._get_noisy_rollout_policy(self.policy, self.init_buffer_size // self.num_env) for _ in range(self.num_env)]
+            
+            initial_rollout = self.env_rollout.rollout(
                 num_steps=self.init_buffer_size,
                 reset=True,
                 policy=self._get_noisy_rollout_policy(self.policy, self.init_buffer_size),
                 max_steps_per_episode=self.max_steps_per_episode)
+                
         self.replay_buffer.add(initial_rollout)
 
         self.policy.train()
@@ -141,14 +162,18 @@ class TD3:
         
         for epoch in range(self.n_epoch):
             # Interact with the environment using current policy
-            noisy_rollout_policy = self._get_noisy_rollout_policy(self.policy, self.rollout_steps)
-
             if self.update_per_rollout > 0 and epoch % self.update_per_rollout == 0:
-                transitions = self.fast_rollout.rollout(
+                if self.num_env == 1:
+                    noisy_rollout_policy = self._get_noisy_rollout_policy(self.policy, self.rollout_steps)
+                else:
+                    noisy_rollout_policy = [self._get_noisy_rollout_policy(self.policy, self.rollout_steps//self.num_env) for _ in range(self.num_env)]
+                
+                transitions = self.env_rollout.rollout(
                                         num_steps=self.rollout_steps, 
                                         reset=False,
                                         policy=noisy_rollout_policy, 
                                         max_steps_per_episode=self.max_steps_per_episode)
+
                 self.replay_buffer.add(transitions)
                 total_steps += transitions['state'].shape[0]
 

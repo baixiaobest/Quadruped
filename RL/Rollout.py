@@ -8,7 +8,8 @@ import numpy as np
 import torch
 from RL.PolicyNetwork import ActionType
 import itertools
-from typing import Dict
+from typing import Dict, List
+import threading
 
 class SimpleRollout:
     def __init__(self, env, action_type) -> None:
@@ -130,10 +131,10 @@ class FastRollout:
 
     def get_structure(self):
         transition_structure = {
-            'state': (np.float32, (self.state_shape,)),
-            'action': (np.float32, (self.action_shape,)),
+            'state': (np.float32, self.state_shape),
+            'action': (np.float32, self.action_shape),
             'reward': (np.float32, ()),
-            'next_state': (np.float32, (self.state_shape,)),
+            'next_state': (np.float32, self.state_shape),
             'done': (np.bool_, ()),
             'step_in_episode': (np.int32, ()),
             'episode_max_step_reached': (np.bool_, ())
@@ -141,8 +142,8 @@ class FastRollout:
         if self.action_type == ActionType.GAUSSIAN:
             transition_structure.update({
                 'action_log_prob': (np.float32, ()),
-                'mean': (np.float32, (self.action_shape,)),
-                'std': (np.float32, (self.action_shape,))
+                'mean': (np.float32, self.action_shape),
+                'std': (np.float32, self.action_shape)
             })
 
         return transition_structure
@@ -206,4 +207,162 @@ class FastRollout:
                 steps_in_episode = 0
 
         return transitions
-    
+
+class VectorizedRollout:
+    def __init__(self, envs: List, action_type, state_shape: tuple, action_shape: tuple):
+        self.envs = envs
+        self.num_envs = len(envs)
+        self.action_type = action_type
+        self.state_shape = state_shape
+        self.action_shape = action_shape
+
+        self.states = np.zeros((self.num_envs, *state_shape))
+        
+        # Define data structure compatible with ReplayBuffer
+        self.transition_structure = self.get_structure()
+        self.global_counter = 0
+
+    def get_structure(self):
+        transition_structure = {
+            'state': (np.float32, self.state_shape),
+            'action': (np.float32, self.action_shape),
+            'reward': (np.float32, ()),
+            'next_state': (np.float32, self.state_shape),
+            'done': (np.bool_, ()),
+            'step_in_episode': (np.int32, ()),
+            'episode_max_step_reached': (np.bool_, ())
+        }
+        if self.action_type == ActionType.GAUSSIAN:
+            transition_structure.update({
+                'action_log_prob': (np.float32, ()),
+                'mean': (np.float32, self.action_shape),
+                'std': (np.float32, self.action_shape)
+            })
+
+        return transition_structure
+
+    def rollout(self, num_steps: int, policy: List, reset=False, max_steps_per_episode: int = 1000) -> Dict[str, np.ndarray]:
+        assert len(policy) == self.num_envs, "Number of policies must match number of environments"
+        
+        # Calculate initial cache and chunk sizes
+        cache_size = max(1, num_steps // self.num_envs)
+        chunk_size = max(1, cache_size // 2)
+        
+        # Shared state
+        self.global_counter = 0
+        lock = threading.Lock()
+        results = []
+        threads = []
+        
+        # Create worker threads
+        for thread_id, env in enumerate(self.envs):
+            thread = threading.Thread(
+                target=self._env_worker,
+                args=(thread_id, env, policy[thread_id], num_steps, max_steps_per_episode,
+                     cache_size, chunk_size, lock, results, reset)
+            )
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for completion
+        for thread in threads:
+            thread.join()
+            
+        return self._merge_results(results)
+
+    def _env_worker(self, thread_id, env, policy, total_steps, max_steps,
+                   cache_size, chunk_size, lock, results, reset):
+        # Initialize thread-local storage
+        cache = self._init_cache(cache_size)
+        current_step = 0
+        if reset:
+            self.states[thread_id], _ = env.reset()
+        steps_in_episode = 0
+        
+        while True:
+            # Atomic step allocation
+            with lock:
+                if self.global_counter >= total_steps:
+                    break
+                remaining = total_steps - self.global_counter
+                allocated = min(chunk_size, remaining)
+                if allocated <= 0:
+                    break
+                self.global_counter += allocated
+                # print(f"Thread: {thread_id}, curr step {current_step} , global_counter: {self.global_counter}")
+            
+            # Dynamic cache expansion
+            if current_step + allocated > cache['state'].shape[0]:
+                new_size = current_step + allocated
+                cache = self._resize_cache(cache, new_size)
+            
+            # Process allocated steps
+            for i in range(allocated):
+                # Policy inference
+                state_t = torch.as_tensor(self.states[thread_id], dtype=torch.float32)
+                with torch.no_grad():
+                    if self.action_type == ActionType.DETERMINISTIC_CONTINUOUS:
+                        action = policy(state_t).numpy()
+                    elif self.action_type == ActionType.GAUSSIAN:
+                        mean, std = policy(state_t)
+                        action_dist = torch.distributions.Normal(mean, std)
+                        action = action_dist.sample()
+                        log_prob = action_dist.log_prob(action).sum()
+                        action = action.numpy()
+                        
+                        # Store policy parameters
+                        cache['action_log_prob'][current_step + i] = log_prob.item()
+                        cache['mean'][current_step + i] = mean.numpy()
+                        cache['std'][current_step + i] = std.numpy()
+                
+                # Environment interaction
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
+                episode_max = steps_in_episode >= max_steps - 1
+                
+                # Store transition
+                cache['state'][current_step + i] = self.states[thread_id]
+                cache['action'][current_step + i] = action
+                cache['reward'][current_step + i] = reward
+                cache['next_state'][current_step + i] = next_state
+                cache['done'][current_step + i] = done
+                cache['step_in_episode'][current_step + i] = steps_in_episode
+                
+                # Update state tracking
+                if done or episode_max:
+                    self.states[thread_id], _ = env.reset()
+                    steps_in_episode = 0
+                else:
+                    self.states[thread_id] = next_state
+                    steps_in_episode += 1
+            
+            current_step += allocated
+        
+        # Trim and store results
+        cache = self._resize_cache(cache, current_step)
+        with lock:
+            results.append(cache)
+
+    def _init_cache(self, size: int) -> Dict[str, np.ndarray]:
+        """Initialize pre-allocated numpy arrays"""
+        return {
+            key: np.empty((size, *shape), dtype=dtype)
+            for key, (dtype, shape) in self.transition_structure.items()
+        }
+
+    def _resize_cache(self, cache: Dict[str, np.ndarray], new_size: int) -> Dict[str, np.ndarray]:
+        """Resize cache while preserving existing data"""
+        if new_size <= cache['state'].shape[0]:
+            return {k: v[:new_size] for k, v in cache.items()}
+        
+        new_cache = self._init_cache(new_size)
+        for key in cache:
+            new_cache[key][:cache[key].shape[0]] = cache[key]
+        return new_cache
+
+    def _merge_results(self, results: List[Dict[str, np.ndarray]]) -> Dict[str, np.ndarray]:
+        """Concatenate results from all threads"""
+        merged = {}
+        for key in self.transition_structure:
+            merged[key] = np.concatenate([r[key] for r in results], axis=0)
+        return merged
