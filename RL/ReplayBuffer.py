@@ -1,47 +1,92 @@
 import numpy as np
-from typing import Dict, List
+from typing import Dict
 
 class ReplayBuffer:
-    def __init__(self, capacity: int):
+    def __init__(self, capacity: int, structure: Dict[str, tuple]):
+        """
+        Initialize ReplayBuffer with pre-allocated numpy arrays.
+        
+        :param capacity: Maximum number of transitions stored
+        :param structure: Dictionary specifying buffer structure {
+            'key_name': (dtype, shape), 
+            e.g. 'state': (np.float32, (4,))
+        }
+        """
         self.capacity = capacity
-        self.buffer: List[Dict] = [{}] * capacity  # Pre-allocate list of empty dicts
-        self.ptr = 0  # Pointer to next write position
-        self.size = 0  # Current number of transitions
-
-    def add_list(self, transitions: List[Dict]):
-        """Add a list of transitions (dictionaries) to the buffer."""
-        for transition in transitions:
-            self.add(transition)
+        self.structure = structure
+        self.ptr = 0  # Current write pointer
+        self.size = 0  # Current buffer size
+        
+        # Pre-allocate numpy arrays for each key
+        self.data = {}
+        for key, (dtype, shape) in structure.items():
+            self.data[key] = np.empty((capacity, *shape), dtype=dtype)
     
-    def add(self, transition: Dict):
-        """Add a transition (dictionary) to the buffer."""
-        self.buffer[self.ptr] = transition
-        self.ptr = (self.ptr + 1) % self.capacity
-        self.size = min(self.size + 1, self.capacity)
+    def add(self, transitions: Dict[str, np.ndarray]):
+        """
+        Add batch of transitions to buffer using vectorized operations.
+        
+        :param transitions: Dictionary of numpy arrays where each array's
+        first dimension is the batch size
+        """
+        batch_size = transitions[next(iter(transitions))].shape[0]
+        start_ptr = self.ptr
+        
+        if self.ptr + batch_size <= self.capacity:
+            end_ptr = self.ptr + batch_size
+            for key in self.data:
+                self.data[key][start_ptr:end_ptr] = transitions[key]
+            self.ptr = end_ptr
+        else:
+            # Handle wrap-around case
+            remaining = self.capacity - start_ptr
+            for key in self.data:
+                # Fill end of buffer
+                self.data[key][start_ptr:self.capacity] = transitions[key][:remaining]
+                # Fill beginning of buffer
+                self.data[key][0:batch_size - remaining] = transitions[key][remaining:]
+            self.ptr = batch_size - remaining
+        
+        self.size = min(self.size + batch_size, self.capacity)
     
-    def sample(self, batch_size: int) -> List[Dict]:
-        """Sample a batch of transitions uniformly."""
+    def sample(self, batch_size: int) -> Dict[str, np.ndarray]:
+        """Sample batch of transitions using vectorized indexing"""
         indices = np.random.choice(self.size, batch_size, replace=False)
-        return [self.buffer[idx] for idx in indices]
+        return {key: arr[indices] for key, arr in self.data.items()}
     
     def __len__(self):
         return self.size
 
-# Example usage
+# Updated example usage
 if __name__ == "__main__":
+    # Define buffer structure (user-configurable)
+    buffer_structure = {
+        'state': (np.float32, (4,)),
+        'action': (np.int32, ()),
+        'reward': (np.float32, ()),
+        'next_state': (np.float32, (4,)),
+        'done': (np.bool_, ())
+    }
+    
     # Initialize buffer with capacity 5
-    buffer = ReplayBuffer(5)
+    buffer = ReplayBuffer(5, buffer_structure)
 
-    # Add transitions (dictionaries)
-    for i in range(7):  # Add 7 transitions (will overwrite oldest 2)
-        buffer.add({
-            "state": np.random.randn(4),
-            "action": i % 2,
-            "reward": float(i),
-            "next_state": np.random.randn(4),
-            "done": False
-        })
+    # Create batch of 7 transitions (will overwrite oldest 2)
+    batch_size = 7
+    transitions = {
+        'state': np.random.randn(batch_size, 4).astype(np.float32),
+        'action': np.arange(batch_size) % 2,
+        'reward': np.arange(batch_size, dtype=np.float32),
+        'next_state': np.random.randn(batch_size, 4).astype(np.float32),
+        'done': np.zeros(batch_size, dtype=np.bool_)
+    }
+    
+    # Add entire batch in one vectorized operation
+    buffer.add(transitions)
+    print(f"Buffer size after adding 7: {len(buffer)}")  # Should be 5
 
-    # Sample a batch
+    # Sample and inspect
     batch = buffer.sample(3)
-    print("Sampled transitions:", batch)
+    print("\nSampled states shape:", batch['state'].shape)
+    print("Sampled actions:", batch['action'])
+    print("Sampled rewards:", batch['reward'])

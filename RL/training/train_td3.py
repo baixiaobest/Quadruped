@@ -19,7 +19,7 @@ import gymnasium as gym
 import torch
 import random
 
-def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_name=None, num_epoch=1000, 
+def train(load, seed, file_name, visualize=False, algorithm_name="td3", start_policy_name=None, num_epoch=1000, 
           env_name="inverted_pendulum", max_steps_per_episode=500, show=True, verbose_logging=False):
     
     random.seed(seed)
@@ -30,49 +30,43 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
     visualize_env = None
     if env_name=="inverted_pendulum":
         training_env = gym.make("InvertedPendulum-v5", render_mode=None)
-        visualize_env = gym.make("InvertedPendulum-v5", render_mode='human')
+        eval_env = gym.make("InvertedPendulum-v5", render_mode=None)
+        if visualize:
+            visualize_env = gym.make("InvertedPendulum-v5", render_mode='human')
         state_dim = 4
         action_dim = 1
 
     elif env_name=="half_cheetah":
         training_env = gym.make("HalfCheetah-v5", render_mode=None)
-        visualize_env = gym.make("HalfCheetah-v5", render_mode='human')
+        eval_env = gym.make("HalfCheetah-v5", render_mode=None)
+        if visualize:
+            visualize_env = gym.make("HalfCheetah-v5", render_mode='human')
         state_dim = 17
         action_dim = 6
     elif env_name=="walker":
         training_env = gym.make("Walker2d-v5", render_mode=None)
-        visualize_env = gym.make("Walker2d-v5", render_mode='human')
+        eval_env = gym.make("Walker2d-v5", render_mode=None)
+        if visualize:
+            visualize_env = gym.make("Walker2d-v5", render_mode='human')
         state_dim = 17
         action_dim = 6
     elif env_name=="hopper":
         training_env = gym.make("Hopper-v5", 
                        render_mode=None,
                        jump_reward_weight=0.2)
-        visualize_env = gym.make("Hopper-v5", render_mode='human')
+        eval_env = gym.make("Hopper-v5",
+                       render_mode=None,
+                       jump_reward_weight=0.2)
+        if visualize:
+            visualize_env = gym.make("Hopper-v5", render_mode='human')
         state_dim = 11
         action_dim = 3
     else:
         raise ValueError(f"Unsupported environment: {env_name}")
 
-    logger = Logger()
     init_policy = 'uniform'
     if load:
         init_policy = 'current'
-
-    def get_eval_callback():
-        max_val = 180
-        def eval_callback(epoch, R, policy, Q1, Q2):
-            nonlocal max_val
-            if epoch > 0 and R > max_val + 10:
-                print("saving model")
-                max_val = R
-                # Save the policy
-                torch.save(policy.state_dict(), f'models/{file_name}_R{R:.0f}.pth')
-
-                # Save the Q value network
-                torch.save(Q1.state_dict(), f'value_models/{file_name}_R{R:.0f}_Q1.pth')
-                torch.save(Q2.state_dict(), f'value_models/{file_name}_R{R:.0f}_Q2.pth')
-        return eval_callback
 
     algorithm = None
     if algorithm_name == "td3":
@@ -85,6 +79,9 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
 
         algorithm = TD3(
             training_env, 
+            eval_env,
+            state_dim,
+            action_dim,
             policy, 
             policy_optimizer, 
             Q1, 
@@ -118,9 +115,6 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
                 'noise_clip': 0.5,
             }, 
             target_noise=0.2, 
-            # eval_callback=get_eval_callback(),
-            # true_q_estimate_every=2000,
-            # true_q_estimate_episode=50,
             verbose_logging=verbose_logging,
             visualize_env=visualize_env,
             visualize_every=1000)
@@ -134,22 +128,15 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
             policy.load_state_dict(torch.load(f'models/{start_policy_name}.pth'))
             Q1.load_state_dict(torch.load(f'value_models/{start_policy_name}_Q1.pth'))
             Q2.load_state_dict(torch.load(f'value_models/{start_policy_name}_Q2.pth'))
-            if load_log:
-                logger.load_from_file(f'log/{start_policy_name}.pkl')
-                logger.set_episode_offset(logger.get_max_episode() + 1)
-                logger.set_update_round_offset(logger.get_max_update_round() + 1)
         else:
             policy.load_state_dict(torch.load(f'models/{file_name}.pth'))
             Q1.load_state_dict(torch.load(f'value_models/{file_name}_Q1.pth'))
             Q2.load_state_dict(torch.load(f'value_models/{file_name}_Q2.pth'))
-            if load_log:
-                logger.load_from_file(f'log/{file_name}.pkl')
-                logger.set_episode_offset(logger.get_max_episode() + 1)
-                logger.set_update_round_offset(logger.get_max_update_round() + 1)
 
     algorithm.train()
     training_env.close()
-    visualize_env.close()
+    if visualize_env:
+        visualize_env.close()
 
     # Save the policy
     torch.save(policy.state_dict(), f'models/{file_name}.pth')
@@ -158,11 +145,6 @@ def train(load, load_log, seed, file_name, algorithm_name="td3", start_policy_na
     torch.save(Q1.state_dict(), f'value_models/{file_name}_Q1.pth')
     torch.save(Q2.state_dict(), f'value_models/{file_name}_Q2.pth')
 
-    logger.save_to_file(f'log/{file_name}.pkl')
-    
-    if show:
-        ui = LoggerUI(logger)
-        ui.run()
 
 def create_policy(state_dim, action_dim):
     policy = DeterministicContinuousPolicy(state_dim, action_dim, hidden_dims=[64, 64])
@@ -224,8 +206,8 @@ if __name__=="__main__":
 
     # Inverted pendulum
 
-    train(load=False, load_log=False, seed=7846, file_name="td3_inverted_pendulum", algorithm_name="td3", start_policy_name=None, 
-          env_name="inverted_pendulum", num_epoch=30_000, max_steps_per_episode=200, show=True)
+    # train(load=False, seed=7846, file_name="td3_inverted_pendulum", algorithm_name="td3", start_policy_name=None, 
+    #       env_name="inverted_pendulum", num_epoch=30_000, max_steps_per_episode=200, show=True)
     
     # plot_log(file_name="td3_inverted_pendulum")
 
@@ -233,8 +215,12 @@ if __name__=="__main__":
 
     # Half cheetah
 
+    # Profiling setup, don't change
     # train(load=False, seed=546221, file_name="td3_half_cheetah", algorithm_name="td3", start_policy_name=None, 
-    #       env_name="half_cheetah", num_epoch=100_000, max_steps_per_episode=200, show=True)
+    #       env_name="half_cheetah", num_epoch=3_000, max_steps_per_episode=300, show=False)
+
+    train(load=False, seed=546221, file_name="td3_half_cheetah", algorithm_name="td3", start_policy_name=None, 
+          env_name="half_cheetah", num_epoch=100_000, max_steps_per_episode=300, show=False)
     
     # inference_half_cheetah(file_name="td3_half_cheetah", render=True)
 
@@ -242,11 +228,11 @@ if __name__=="__main__":
 
     # Hopper
 
-    # train(load=False, load_log=False, seed=53587, file_name="td3_hopper", algorithm_name="td3", 
+    # train(load=False, seed=53587, file_name="td3_hopper", algorithm_name="td3", 
     #       start_policy_name=None, env_name="hopper", num_epoch=20_000, max_steps_per_episode=300, 
     #       show=True, verbose_logging=True)
 
-    # train(load=True, load_log=False, seed=53587, file_name="td3_hopper", algorithm_name="td3", 
+    # train(load=True, seed=53587, file_name="td3_hopper", algorithm_name="td3", 
     #       start_policy_name="td3_hopper_R232", env_name="hopper", num_epoch=20_000, max_steps_per_episode=500, 
     #       show=True, verbose_logging=False)
     
