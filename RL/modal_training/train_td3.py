@@ -55,18 +55,24 @@ def train():
 
     if env_name=="inverted_pendulum":
         training_env = gym.make("InvertedPendulum-v5", render_mode=None)
+        eval_env = gym.make("InvertedPendulum-v5", render_mode=None)
         state_dim = 4
         action_dim = 1
     elif env_name=="half_cheetah":
         training_env = gym.make("HalfCheetah-v5", render_mode=None)
+        eval_env = gym.make("HalfCheetah-v5", render_mode=None)
         state_dim = 17
         action_dim = 6
     elif env_name=="walker":
         training_env = gym.make("Walker2d-v5", render_mode=None)
+        eval_env = gym.make("Walker2d-v5", render_mode=None)
         state_dim = 17
         action_dim = 6
     elif env_name=="hopper":
         training_env = gym.make("Hopper-v5", 
+                       render_mode=None,
+                       jump_reward_weight=0.2)
+        eval_env = gym.make("Hopper-v5",
                        render_mode=None,
                        jump_reward_weight=0.2)
         state_dim = 11
@@ -83,6 +89,9 @@ def train():
 
     algorithm = TD3(
         training_env, 
+        eval_env,
+        state_dim,
+        action_dim,
         policy, 
         policy_optimizer, 
         Q1, 
@@ -90,13 +99,14 @@ def train():
         Q2, 
         Q2_optimizer, 
         tensorboard_log_dir=f'/log/tensorboard/{file_name}_{current_time}',
+        log_every=1000,
         n_epoch=num_epoch, 
-        max_steps_per_episode=300, 
+        max_steps_per_episode=1000, 
         init_buffer_size=50_000, 
         init_policy="uniform",
         rollout_steps=100,
         update_per_rollout=20,
-        eval_every=100, 
+        eval_every=1000, 
         eval_episode=1, 
         batch_size=256, 
         replay_buffer_size=1e6, 
@@ -116,12 +126,7 @@ def train():
             'noise_clip': 0.5,
         }, 
         target_noise=0.2, 
-        # eval_callback=get_eval_callback(),
-        # true_q_estimate_every=2000,
-        # true_q_estimate_episode=50,
-        verbose_logging=True,
-        visualize_env=None,
-        visualize_every=1000)
+        verbose_logging=False)
     
     algorithm.train()
     

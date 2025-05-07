@@ -9,6 +9,7 @@ os.environ["DISPLAY"] = ":0"           # Forces X11 display
 os.environ["XDG_SESSION_TYPE"] = "x11" # Explicitly use X11 session
 os.environ["QT_QPA_PLATFORM"] = "xcb"  # Qt platform plugin for X11
 
+from RL import training
 from RL.TD3 import TD3
 from RL.Logger import Logger
 from RL.LoggerUI import LoggerUI
@@ -18,6 +19,7 @@ from RL.training.common_double_integrator import *
 import gymnasium as gym
 import torch
 import random
+from typing import List
 
 def train(load, seed, file_name, visualize=False, algorithm_name="td3", start_policy_name=None, num_epoch=1000, 
           env_name="inverted_pendulum", max_steps_per_episode=500, show=True, verbose_logging=False):
@@ -37,6 +39,7 @@ def train(load, seed, file_name, visualize=False, algorithm_name="td3", start_po
         action_dim = 1
 
     elif env_name=="half_cheetah":
+        # training_env = [gym.make("HalfCheetah-v5", render_mode=None) for i in range(4)]
         training_env = gym.make("HalfCheetah-v5", render_mode=None)
         eval_env = gym.make("HalfCheetah-v5", render_mode=None)
         if visualize:
@@ -93,9 +96,9 @@ def train(load, seed, file_name, visualize=False, algorithm_name="td3", start_po
             max_steps_per_episode=max_steps_per_episode, 
             init_buffer_size=50_000, 
             init_policy=init_policy,
-            rollout_steps=100,
-            update_per_rollout=20,
-            eval_every=100, 
+            rollout_steps=4000,
+            update_per_rollout=100,
+            eval_every=500,
             eval_episode=1, 
             batch_size=300, 
             replay_buffer_size=1e6, 
@@ -134,7 +137,11 @@ def train(load, seed, file_name, visualize=False, algorithm_name="td3", start_po
             Q2.load_state_dict(torch.load(f'value_models/{file_name}_Q2.pth'))
 
     algorithm.train()
-    training_env.close()
+    if isinstance(training_env, List):
+        for env in training_env:
+            env.close()
+    else:
+        training_env.close()
     if visualize_env:
         visualize_env.close()
 
@@ -216,11 +223,11 @@ if __name__=="__main__":
     # Half cheetah
 
     # Profiling setup, don't change
-    # train(load=False, seed=546221, file_name="td3_half_cheetah", algorithm_name="td3", start_policy_name=None, 
-    #       env_name="half_cheetah", num_epoch=3_000, max_steps_per_episode=300, show=False)
-
     train(load=False, seed=546221, file_name="td3_half_cheetah", algorithm_name="td3", start_policy_name=None, 
-          env_name="half_cheetah", num_epoch=100_000, max_steps_per_episode=300, show=False)
+          env_name="half_cheetah", num_epoch=10_000, max_steps_per_episode=300, show=False)
+
+    # train(load=False, seed=546221, file_name="td3_half_cheetah", algorithm_name="td3", start_policy_name=None, 
+    #       env_name="half_cheetah", num_epoch=100_000, max_steps_per_episode=300, show=False)
     
     # inference_half_cheetah(file_name="td3_half_cheetah", render=True)
 
